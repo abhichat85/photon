@@ -81,7 +81,8 @@ async def chat_completions(request: Request):
 
 async def _stream_chat(state, backend, payload, record):
     body = {**payload, "model": backend.model}
-    body.setdefault("stream_options", {"include_usage": True})
+    opts = payload.get("stream_options")
+    body["stream_options"] = {**(opts if isinstance(opts, dict) else {}), "include_usage": True}
     req = state.http.build_request(
         "POST", f"{backend.base_url}/chat/completions", json=body
     )
@@ -102,6 +103,7 @@ async def _stream_chat(state, backend, payload, record):
 
     async def relay():
         usage: dict = {}
+        completed = False
         try:
             async for line in upstream.aiter_lines():
                 if line.startswith("data: ") and '"usage"' in line:
@@ -112,9 +114,10 @@ async def _stream_chat(state, backend, payload, record):
                     except json.JSONDecodeError:
                         pass
                 yield (line + "\n").encode()
+            completed = True
         finally:
             await upstream.aclose()
-            record.status = "ok"
+            record.status = "ok" if completed else "error"
             record.latency_ms = (time.perf_counter() - started) * 1000
             record.prompt_tokens = usage.get("prompt_tokens")
             record.completion_tokens = usage.get("completion_tokens")
@@ -122,6 +125,13 @@ async def _stream_chat(state, backend, payload, record):
                 record.cost_usd = compute_cost_usd(
                     backend.pricing, record.prompt_tokens, record.completion_tokens
                 )
+                shadow_name = state.shadow.candidate(backend.name, payload.get("messages", []))
+                if shadow_name is not None:
+                    shadow_backend = state.config.backend(shadow_name)
+                    record.shadow_backend = shadow_name
+                    record.shadow_est_cost_usd = compute_cost_usd(
+                        shadow_backend.pricing, record.prompt_tokens, record.completion_tokens
+                    )
             state.store.insert(record)
 
     return StreamingResponse(

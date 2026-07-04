@@ -36,4 +36,7 @@ class OpenAIProxy:
             raise BackendError(
                 backend.name, f"upstream status {resp.status_code}: {resp.text[:200]}"
             )
-        return resp.json(), latency_ms
+        try:
+            return resp.json(), latency_ms
+        except ValueError as exc:
+            raise BackendError(backend.name, f"invalid JSON from upstream: {exc}") from exc

@@ -61,3 +61,14 @@ async def test_connection_error_raises_backend_error():
         proxy = OpenAIProxy(client)
         with pytest.raises(BackendError):
             await proxy.chat_completions(BACKEND, {"messages": []})
+
+
+@respx.mock
+async def test_non_json_200_raises_backend_error():
+    respx.post("http://big.test/v1/chat/completions").mock(
+        return_value=httpx.Response(200, text="<html>gateway timeout</html>")
+    )
+    async with httpx.AsyncClient() as client:
+        proxy = OpenAIProxy(client)
+        with pytest.raises(BackendError):
+            await proxy.chat_completions(BACKEND, {"messages": []})
