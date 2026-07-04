@@ -1,0 +1,27 @@
+# Photon fleet config — example.
+# pricing = USD per 1M tokens. For self-hosted backends, derive from
+# (GPU instance $/hr) / (measured tokens/hr); for external baselines use
+# the provider's listed price. These example numbers are placeholders —
+# replace with your measured values before trusting any cost report.
+backends:
+  - name: big
+    base_url: http://vllm-big:8000/v1
+    model: Qwen/Qwen2.5-14B-Instruct
+    pricing:
+      input_per_1m: 0.90
+      output_per_1m: 0.90
+  - name: small
+    base_url: http://vllm-small:8001/v1
+    model: Qwen/Qwen2.5-1.5B-Instruct
+    pricing:
+      input_per_1m: 0.08
+      output_per_1m: 0.08
+
+routing:
+  default_backend: big
+  aliases:
+    praxiom-chat: big
+  shadow:
+    enabled: true
+    candidate_backend: small
+    max_prompt_chars: 2000

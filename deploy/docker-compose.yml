@@ -1,0 +1,49 @@
+services:
+  photon:
+    build: ..
+    ports:
+      - "8080:8080"
+    environment:
+      PHOTON_CONFIG: /etc/photon/fleet.yaml
+      PHOTON_DB: /data/photon.db
+    volumes:
+      - ../config/fleet.example.yaml:/etc/photon/fleet.yaml:ro
+      - photon-data:/data
+    depends_on:
+      - vllm-big
+      - vllm-small
+
+  # GPU services — require NVIDIA Container Toolkit on the host.
+  vllm-big:
+    image: vllm/vllm-openai:latest
+    command: ["--model", "Qwen/Qwen2.5-14B-Instruct", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vllm-small:
+    image: vllm/vllm-openai:latest
+    command: ["--model", "Qwen/Qwen2.5-1.5B-Instruct", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  photon-data:
+  hf-cache:
