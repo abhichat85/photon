@@ -1,9 +1,10 @@
 # photon/api/chat.py
+import json
 import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from photon.backends.openai_proxy import BackendError
 from photon.costs import compute_cost_usd
@@ -45,6 +46,9 @@ async def chat_completions(request: Request):
         latency_ms=0.0,
     )
 
+    if payload.get("stream") is True:
+        return await _stream_chat(state, backend, payload, record)
+
     try:
         response, latency_ms = await state.proxy.chat_completions(backend, payload)
     except BackendError as exc:
@@ -72,4 +76,59 @@ async def chat_completions(request: Request):
     return JSONResponse(
         response,
         headers={"X-Photon-Request-Id": request_id, "X-Photon-Backend": backend.name},
+    )
+
+
+async def _stream_chat(state, backend, payload, record):
+    body = {**payload, "model": backend.model}
+    body.setdefault("stream_options", {"include_usage": True})
+    req = state.http.build_request(
+        "POST", f"{backend.base_url}/chat/completions", json=body
+    )
+    try:
+        upstream = await state.http.send(req, stream=True)
+    except Exception as exc:
+        state.store.insert(record)
+        raise HTTPException(status_code=502, detail=f"{backend.name}: {exc}")
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        state.store.insert(record)
+        raise HTTPException(
+            status_code=502,
+            detail=f"{backend.name}: upstream status {upstream.status_code}",
+        )
+
+    started = time.perf_counter()
+
+    async def relay():
+        usage: dict = {}
+        try:
+            async for line in upstream.aiter_lines():
+                if line.startswith("data: ") and '"usage"' in line:
+                    try:
+                        chunk = json.loads(line[len("data: "):])
+                        if isinstance(chunk, dict) and chunk.get("usage"):
+                            usage = chunk["usage"]
+                    except json.JSONDecodeError:
+                        pass
+                yield (line + "\n").encode()
+        finally:
+            await upstream.aclose()
+            record.status = "ok"
+            record.latency_ms = (time.perf_counter() - started) * 1000
+            record.prompt_tokens = usage.get("prompt_tokens")
+            record.completion_tokens = usage.get("completion_tokens")
+            if record.prompt_tokens is not None and record.completion_tokens is not None:
+                record.cost_usd = compute_cost_usd(
+                    backend.pricing, record.prompt_tokens, record.completion_tokens
+                )
+            state.store.insert(record)
+
+    return StreamingResponse(
+        relay(),
+        media_type="text/event-stream",
+        headers={
+            "X-Photon-Request-Id": record.request_id,
+            "X-Photon-Backend": backend.name,
+        },
     )
