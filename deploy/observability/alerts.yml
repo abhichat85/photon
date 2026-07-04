@@ -1,0 +1,29 @@
+groups:
+  - name: photon-slo
+    rules:
+      - alert: PhotonGatewayDown
+        expr: up{job="photon"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Photon gateway scrape target is down"
+      - alert: PhotonHighErrorRate
+        # 99.9% availability SLO → page when error rate exceeds 0.1% for 5m
+        expr: |
+          sum(rate(photon_requests_total{status="error"}[5m]))
+            / clamp_min(sum(rate(photon_requests_total[5m])), 1e-9) > 0.001
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Photon error rate above 0.1% (99.9% SLO burn)"
+      - alert: PhotonLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(photon_request_latency_seconds_bucket[10m]))) > 10
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Photon upstream p95 latency above 10s"

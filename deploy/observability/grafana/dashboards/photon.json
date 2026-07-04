@@ -1,0 +1,20 @@
+{
+  "title": "Photon Ops",
+  "uid": "photon-ops",
+  "schemaVersion": 39,
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Requests/s by backend",
+     "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+     "targets": [{"expr": "sum by (backend) (rate(photon_requests_total[5m]))", "refId": "A"}]},
+    {"id": 2, "type": "timeseries", "title": "p95 upstream latency (s)",
+     "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+     "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(photon_request_latency_seconds_bucket[10m])))", "refId": "A"}]},
+    {"id": 3, "type": "timeseries", "title": "Cost USD/hour by tenant",
+     "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+     "targets": [{"expr": "sum by (tenant) (rate(photon_cost_usd_total[1h])) * 3600", "refId": "A"}]},
+    {"id": 4, "type": "timeseries", "title": "Error rate",
+     "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+     "targets": [{"expr": "sum(rate(photon_requests_total{status=\"error\"}[5m])) / clamp_min(sum(rate(photon_requests_total[5m])), 1e-9)", "refId": "A"}]}
+  ]
+}
