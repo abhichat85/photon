@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from photon.api.admin import admin_router
 from photon.api.chat import chat_router
+from photon.api.metrics import metrics_router
 from photon.backends.openai_proxy import OpenAIProxy
 from photon.config import PhotonConfig
 from photon.router.shadow import ShadowPolicy
@@ -32,6 +33,7 @@ def create_app(config: PhotonConfig | None = None, db_path: str | None = None) -
     app.state.store = TelemetryStore(db_path)
     app.include_router(chat_router)
     app.include_router(admin_router)
+    app.include_router(metrics_router)
     return app
 
 

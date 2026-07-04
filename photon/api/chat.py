@@ -6,6 +6,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from photon.api import metrics
 from photon.backends.openai_proxy import BackendError
 from photon.costs import compute_cost_usd
 from photon.router.static import AUTO_MODEL, UnknownModelError
@@ -53,6 +54,7 @@ async def chat_completions(request: Request):
         response, latency_ms = await state.proxy.chat_completions(backend, payload)
     except BackendError as exc:
         state.store.insert(record)
+        metrics.observe(record)
         raise HTTPException(status_code=502, detail=str(exc))
 
     record.status = "ok"
@@ -72,6 +74,7 @@ async def chat_completions(request: Request):
                 shadow_backend.pricing, record.prompt_tokens, record.completion_tokens
             )
     state.store.insert(record)
+    metrics.observe(record)
 
     return JSONResponse(
         response,
@@ -90,10 +93,12 @@ async def _stream_chat(state, backend, payload, record):
         upstream = await state.http.send(req, stream=True)
     except Exception as exc:
         state.store.insert(record)
+        metrics.observe(record)
         raise HTTPException(status_code=502, detail=f"{backend.name}: {exc}")
     if upstream.status_code >= 400:
         await upstream.aclose()
         state.store.insert(record)
+        metrics.observe(record)
         raise HTTPException(
             status_code=502,
             detail=f"{backend.name}: upstream status {upstream.status_code}",
@@ -133,6 +138,7 @@ async def _stream_chat(state, backend, payload, record):
                         shadow_backend.pricing, record.prompt_tokens, record.completion_tokens
                     )
             state.store.insert(record)
+            metrics.observe(record)
 
     return StreamingResponse(
         relay(),
