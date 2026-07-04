@@ -67,3 +67,13 @@ def test_backend_lookup_missing_raises():
     cfg = PhotonConfig.model_validate(VALID)
     with pytest.raises(KeyError):
         cfg.backend("missing")
+
+
+# append to tests/test_config.py
+def test_canary_weight_must_be_in_unit_interval():
+    bad = {
+        **VALID,
+        "routing": {**VALID["routing"], "canary": {"backend": "small", "weight": 1.5}},
+    }
+    with pytest.raises(ValidationError):
+        PhotonConfig.model_validate(bad)

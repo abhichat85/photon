@@ -29,10 +29,16 @@ class ShadowPolicyConfig(BaseModel):
     max_prompt_chars: int = 2000
 
 
+class CanaryConfig(BaseModel):
+    backend: str
+    weight: float  # fraction of photon-auto traffic in (0, 1]
+
+
 class RoutingConfig(BaseModel):
     default_backend: str
     aliases: dict[str, str] = Field(default_factory=dict)
     shadow: ShadowPolicyConfig = Field(default_factory=ShadowPolicyConfig)
+    canary: CanaryConfig | None = None
 
 
 class PhotonConfig(BaseModel):
@@ -54,6 +60,13 @@ class PhotonConfig(BaseModel):
             raise ValueError(
                 f"shadow candidate_backend {shadow.candidate_backend!r} is not a configured backend"
             )
+        if self.routing.canary is not None:
+            if self.routing.canary.backend not in names:
+                raise ValueError(
+                    f"canary backend {self.routing.canary.backend!r} is not a configured backend"
+                )
+            if not (0 < self.routing.canary.weight <= 1):
+                raise ValueError("canary weight must be in (0, 1]")
         return self
 
     def backend(self, name: str) -> BackendConfig:
