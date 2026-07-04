@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: photon
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PHOTON_CONFIG
+              value: /etc/photon/fleet.yaml
+            - name: PHOTON_DB
+              value: /data/photon.db
+          volumeMounts:
+            - name: config
+              mountPath: /etc/photon
+              readOnly: true
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet: {path: /v1/models, port: 8080}
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: {path: /v1/models, port: 8080}
+            initialDelaySeconds: 10
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+        - name: data
+          emptyDir: {}
