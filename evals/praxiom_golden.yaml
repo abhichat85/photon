@@ -1,0 +1,22 @@
+# evals/praxiom_golden.yaml
+# Seed golden set. Grow this with real Praxiom prompts (anonymized) before
+# cutover — the pre-migration pass rate on the CURRENT provider is the
+# baseline every later change must meet.
+name: praxiom-core
+model: photon-auto
+cases:
+  - id: capital-fact
+    messages:
+      - {role: user, content: "What is the capital of France? Answer in one word."}
+    must_contain: ["paris"]
+    max_latency_ms: 15000
+  - id: json-structure
+    messages:
+      - {role: system, content: "Reply with a JSON object with keys 'summary' and 'confidence'."}
+      - {role: user, content: "Summarize: revenue grew 20% quarter over quarter."}
+    must_match: '"summary"\s*:'
+  - id: instruction-following
+    messages:
+      - {role: user, content: "Repeat the word hello three times, nothing else."}
+    must_contain: ["hello"]
+    must_not_contain: ["cannot help"]
