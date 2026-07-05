@@ -64,9 +64,28 @@ Set in the fleet config:
       canary: {backend: praxiom-intent-cand, weight: 0.1}
 
 Watch Grafana (error rate, p95 latency, cost/hr) for at least a day of
-representative traffic. Then:
+representative traffic. Then promote — promotion is GATED: it refuses unless the
+version carries an eval report meeting the pass-rate threshold (attach the
+report.json from step 5):
 
-    python -m scripts.register_adapter registry.db ... --promote   # or promote() in code
+    python -m scripts.register_adapter registry.db praxiom-intent \
+        Qwen/Qwen2.5-1.5B-Instruct out/praxiom-intent-v1 \
+        --eval-report report.json --promote --min-pass-rate 1.0
+
+To promote without a passing eval (deliberate operational override only):
+add --force. The gate is enforced in registry.promote(), so the HTTP endpoint
+(POST /photon/v1/adapters with promote=true) and any code path are covered too.
 
 flip the alias/default to the new backend, and remove the canary block.
 Rollback = re-promote the previous registry version and flip the config back.
+
+## 7. Continuous drift monitoring (production)
+
+The promotion gate is point-in-time. In production, schedule the drift check
+(k8s CronJob / cron) to catch regressions in the live model:
+
+    python -m scripts.drift_check https://gateway.internal evals/praxiom_golden.yaml \
+        --min-pass-rate 0.95
+
+It updates the photon_golden_pass_rate gauge (push to a Pushgateway via
+PUSHGATEWAY_URL) which drives the PhotonGoldenQualityDrift alert.

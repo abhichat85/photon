@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Test suite (the code-level gate)
+        run: pytest -q
+      # NOTE: the MODEL-quality gate (golden set vs a live vLLM) cannot run in
+      # CI without GPU. It is enforced two other ways, both in-repo:
+      #   1. registry.promote() refuses un-vetted models (see test_registry.py)
+      #   2. scripts/run_evals.py at deploy time (deploy/FINETUNE.md step 5)
+      #   3. scripts/drift_check.py continuously in production (PhotonGoldenQualityDrift)

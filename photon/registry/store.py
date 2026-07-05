@@ -1,9 +1,26 @@
 # photon/registry/store.py
+import json
 import sqlite3
 import time
 from pathlib import Path
 
 from pydantic import BaseModel
+
+
+def eval_pass_rate(eval_report: str | None) -> float | None:
+    """Parse an attached eval report (JSON with `passed`/`total`) into a pass
+    rate. Returns None when the report is missing, malformed, or has total==0 —
+    the promotion gate treats None as 'unverified' and refuses to promote."""
+    if not eval_report:
+        return None
+    try:
+        data = json.loads(eval_report)
+        total = data["total"]
+        if not total:
+            return None
+        return data["passed"] / total
+    except (json.JSONDecodeError, KeyError, TypeError, ZeroDivisionError):
+        return None
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS model_versions (
@@ -79,20 +96,46 @@ class RegistryStore:
             ).fetchone()
         return ModelVersion(**dict(row)) if row else None
 
-    def promote(self, name: str, version: int) -> None:
+    def promote(
+        self,
+        name: str,
+        version: int,
+        min_pass_rate: float = 1.0,
+        force: bool = False,
+    ) -> None:
+        """Promote a version to production, demoting the current one to retired.
+
+        Quality gate (WS-B): unless force=True, the version MUST carry an
+        eval_report whose pass rate is >= min_pass_rate. This is what makes the
+        golden-set gate a real gate rather than a convention — a fine-tune with
+        no eval, or a failing one, cannot reach production traffic through this
+        method. Use force=True only for deliberate operational overrides."""
+        mv = self.get(name, version)
+        if mv is None:
+            raise KeyError((name, version))
+        if not force:
+            rate = eval_pass_rate(mv.eval_report)
+            if rate is None:
+                raise ValueError(
+                    f"cannot promote {name} v{version} without a valid eval_report; "
+                    "attach one (run the golden gate) or promote with force=True"
+                )
+            if rate < min_pass_rate:
+                raise ValueError(
+                    f"{name} v{version} eval pass rate {rate:.3f} < required "
+                    f"{min_pass_rate:.3f}; not promoting"
+                )
         with self._connect() as conn:
             conn.execute(
                 "UPDATE model_versions SET status = 'retired' "
                 "WHERE name = ? AND status = 'production'",
                 (name,),
             )
-            cur = conn.execute(
+            conn.execute(
                 "UPDATE model_versions SET status = 'production' "
                 "WHERE name = ? AND version = ?",
                 (name, version),
             )
-            if cur.rowcount == 0:
-                raise KeyError((name, version))
 
     def attach_eval(self, name: str, version: int, eval_report: str) -> None:
         with self._connect() as conn:

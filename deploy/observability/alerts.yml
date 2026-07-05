@@ -27,3 +27,24 @@ groups:
           severity: warn
         annotations:
           summary: "Photon upstream p95 latency above 10s"
+  - name: photon-quality
+    rules:
+      - alert: PhotonGoldenQualityDrift
+        # Model-quality drift: the periodic drift check (scripts/drift_check.py)
+        # updates photon_golden_pass_rate. Sustained degradation below 0.95
+        # means the served model regressed against the golden set.
+        expr: photon_golden_pass_rate < 0.95
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "Golden-set pass rate below 0.95 (model-quality drift)"
+      - alert: PhotonGoldenCheckStale
+        # The drift check hasn't reported in over an hour — the canary itself
+        # is down, so quality is effectively unmonitored.
+        expr: time() - max(photon_golden_pass_rate_created) > 3600
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Golden drift check stale (no report in >1h)"
