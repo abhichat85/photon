@@ -77,3 +77,32 @@ def test_canary_weight_must_be_in_unit_interval():
     }
     with pytest.raises(ValidationError):
         PhotonConfig.model_validate(bad)
+
+
+def test_quantization_defaults_to_none():
+    cfg = PhotonConfig.model_validate(VALID)
+    assert cfg.backend("big").quantization is None
+
+
+def test_valid_quantization_accepted():
+    v = {
+        **VALID,
+        "backends": [
+            {**VALID["backends"][0]},
+            {**VALID["backends"][1], "quantization": "fp8"},
+        ],
+    }
+    cfg = PhotonConfig.model_validate(v)
+    assert cfg.backend("small").quantization == "fp8"
+
+
+def test_invalid_quantization_rejected():
+    bad = {
+        **VALID,
+        "backends": [
+            {**VALID["backends"][0], "quantization": "int3-nonsense"},
+            {**VALID["backends"][1]},
+        ],
+    }
+    with pytest.raises(ValidationError):
+        PhotonConfig.model_validate(bad)

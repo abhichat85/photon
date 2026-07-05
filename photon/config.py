@@ -2,9 +2,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
+
+# vLLM-supported quantization methods. The gateway does not quantize; this
+# field is fleet metadata that (a) documents what each backend's vLLM serves,
+# (b) is surfaced on /photon/v1/fleet/status, and (c) reminds the operator to
+# launch vLLM with the matching --quantization arg. Quality after enabling a
+# method is validated by the golden-set gate (see deploy/FINETUNE.md).
+Quantization = Literal["awq", "gptq", "fp8", "bitsandbytes"]
 
 
 class ModelPricing(BaseModel):
@@ -21,6 +29,7 @@ class BackendConfig(BaseModel):
     base_url: str  # OpenAI-compatible root, e.g. http://vllm-big:8000/v1
     model: str  # model id the backend expects in the payload
     pricing: ModelPricing
+    quantization: Quantization | None = None  # None = full precision (fp16/bf16)
 
 
 class ShadowPolicyConfig(BaseModel):

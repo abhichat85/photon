@@ -31,7 +31,10 @@ services:
 
   vllm-small:
     image: vllm/vllm-openai:latest
-    command: ["--model", "Qwen/Qwen2.5-1.5B-Instruct", "--port", "8001"]
+    # --quantization MUST match the `quantization:` field for this backend in
+    # config/fleet.example.yaml. fp8 requires Hopper/Ada; drop the flag (and the
+    # config field) to serve full precision on older GPUs.
+    command: ["--model", "Qwen/Qwen2.5-1.5B-Instruct", "--port", "8001", "--quantization", "fp8"]
     ports:
       - "8001:8001"
     volumes:

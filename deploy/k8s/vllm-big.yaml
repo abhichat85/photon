@@ -15,6 +15,9 @@ spec:
       containers:
         - name: vllm
           image: vllm/vllm-openai:latest
+          # To serve a quantized backend, add e.g. "--quantization", "awq" here
+          # AND set the matching `quantization:` field on this backend in the
+          # fleet config, then re-run the golden gate to confirm quality.
           args: ["--model", "Qwen/Qwen2.5-14B-Instruct", "--port", "8000"]
           ports:
             - containerPort: 8000

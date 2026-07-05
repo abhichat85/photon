@@ -16,6 +16,12 @@ backends:
     pricing:
       input_per_1m: 0.08
       output_per_1m: 0.08
+    # quantization is fleet metadata — the vLLM serving this backend MUST be
+    # launched with a matching --quantization arg (see deploy/docker-compose.yml).
+    # After enabling, re-run the golden gate to confirm quality holds:
+    #   python -m scripts.run_evals http://localhost:8080 evals/praxiom_golden.yaml
+    # Allowed: awq | gptq | fp8 | bitsandbytes. fp8 needs Hopper/Ada GPUs.
+    quantization: fp8
 
 routing:
   default_backend: big
