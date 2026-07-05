@@ -10,14 +10,20 @@ from photon.api.chat import chat_router
 from photon.api.metrics import metrics_router
 from photon.backends.openai_proxy import OpenAIProxy
 from photon.config import PhotonConfig
+from photon.registry.store import RegistryStore
 from photon.router.shadow import ShadowPolicy
 from photon.router.static import StaticRouter
 from photon.telemetry.store import TelemetryStore
 
 
-def create_app(config: PhotonConfig | None = None, db_path: str | None = None) -> FastAPI:
+def create_app(
+    config: PhotonConfig | None = None,
+    db_path: str | None = None,
+    registry_db: str | None = None,
+) -> FastAPI:
     config = config or PhotonConfig.from_yaml(os.environ["PHOTON_CONFIG"])
     db_path = db_path or os.environ.get("PHOTON_DB", "photon.db")
+    registry_db = registry_db or os.environ.get("PHOTON_REGISTRY_DB", "registry.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -31,6 +37,7 @@ def create_app(config: PhotonConfig | None = None, db_path: str | None = None) -
     app.state.router = StaticRouter(config)
     app.state.shadow = ShadowPolicy(config)
     app.state.store = TelemetryStore(db_path)
+    app.state.registry = RegistryStore(registry_db)
     app.include_router(chat_router)
     app.include_router(admin_router)
     app.include_router(metrics_router)

@@ -76,3 +76,10 @@ def test_canary_never_applies_to_alias_or_direct():
     router = make_canary_router(draw=0.0)  # would always fire on auto
     assert router.resolve("praxiom-chat").reason == "alias"
     assert router.resolve("small").reason == "direct"
+
+
+def test_allow_canary_false_forces_default():
+    router = make_canary_router(draw=0.0)  # would always fire on auto
+    d = router.resolve(AUTO_MODEL, allow_canary=False)
+    assert d.backend.name == "big"
+    assert d.reason == "default"

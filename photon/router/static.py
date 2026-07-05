@@ -25,11 +25,11 @@ class StaticRouter:
         self._config = config
         self._rng = rng or random.Random()
 
-    def resolve(self, requested_model: str) -> RouteDecision:
+    def resolve(self, requested_model: str, allow_canary: bool = True) -> RouteDecision:
         routing = self._config.routing
         if requested_model == AUTO_MODEL:
             canary = routing.canary
-            if canary is not None and self._rng.random() < canary.weight:
+            if allow_canary and canary is not None and self._rng.random() < canary.weight:
                 return RouteDecision(
                     backend=self._config.backend(canary.backend), reason="canary"
                 )

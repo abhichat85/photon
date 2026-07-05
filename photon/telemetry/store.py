@@ -18,10 +18,23 @@ CREATE TABLE IF NOT EXISTS requests (
     completion_tokens INTEGER,
     cost_usd REAL,
     shadow_backend TEXT,
-    shadow_est_cost_usd REAL
+    shadow_est_cost_usd REAL,
+    route_mode TEXT,
+    quality_bar REAL,
+    latency_slo_ms REAL,
+    budget REAL
 );
 CREATE INDEX IF NOT EXISTS idx_requests_tenant_ts ON requests (tenant, ts);
 """
+
+# Columns added after the initial schema shipped. Applied idempotently on open
+# so pre-existing SQLite files gain them without a manual migration step.
+_MIGRATIONS = {
+    "route_mode": "TEXT",
+    "quality_bar": "REAL",
+    "latency_slo_ms": "REAL",
+    "budget": "REAL",
+}
 
 
 class TelemetryStore:
@@ -34,6 +47,10 @@ class TelemetryStore:
         self._db_path = str(db_path)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            existing = {r["name"] for r in conn.execute("PRAGMA table_info(requests)")}
+            for col, col_type in _MIGRATIONS.items():
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE requests ADD COLUMN {col} {col_type}")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
@@ -48,11 +65,13 @@ class TelemetryStore:
                 INSERT INTO requests (
                     request_id, tenant, ts, requested_model, routed_backend,
                     backend_model, status, latency_ms, prompt_tokens,
-                    completion_tokens, cost_usd, shadow_backend, shadow_est_cost_usd
+                    completion_tokens, cost_usd, shadow_backend, shadow_est_cost_usd,
+                    route_mode, quality_bar, latency_slo_ms, budget
                 ) VALUES (
                     :request_id, :tenant, :ts, :requested_model, :routed_backend,
                     :backend_model, :status, :latency_ms, :prompt_tokens,
-                    :completion_tokens, :cost_usd, :shadow_backend, :shadow_est_cost_usd
+                    :completion_tokens, :cost_usd, :shadow_backend, :shadow_est_cost_usd,
+                    :route_mode, :quality_bar, :latency_slo_ms, :budget
                 )
                 """,
                 record.model_dump(),

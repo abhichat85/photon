@@ -23,12 +23,21 @@ class OpenAIProxy:
     async def chat_completions(
         self, backend: BackendConfig, payload: dict
     ) -> tuple[dict, float]:
+        return await self._post(backend, "/chat/completions", payload)
+
+    async def completions(
+        self, backend: BackendConfig, payload: dict
+    ) -> tuple[dict, float]:
+        """Legacy (non-chat) /v1/completions passthrough."""
+        return await self._post(backend, "/completions", payload)
+
+    async def _post(
+        self, backend: BackendConfig, path: str, payload: dict
+    ) -> tuple[dict, float]:
         body = {**payload, "model": backend.model}
         started = time.perf_counter()
         try:
-            resp = await self._client.post(
-                f"{backend.base_url}/chat/completions", json=body
-            )
+            resp = await self._client.post(f"{backend.base_url}{path}", json=body)
         except httpx.HTTPError as exc:
             raise BackendError(backend.name, str(exc)) from exc
         latency_ms = (time.perf_counter() - started) * 1000

@@ -22,6 +22,33 @@ async def list_models(request: Request):
     return {"object": "list", "data": [{"id": i, "object": "model"} for i in ids]}
 
 
+def parse_photon_block(payload: dict) -> dict:
+    """Pop and validate the optional `photon` request-extension block (spec §6),
+    mutating `payload` so it never reaches the upstream vLLM (which rejects
+    unknown fields). Returns a normalized dict with route/quality_bar/
+    latency_slo_ms/budget. At Ops, `route: pin` disables canary and `cascade`
+    is rejected (Core-only); the quality/latency/budget fields are recorded for
+    the future learned router, not enforced."""
+    block = payload.pop("photon", None)
+    if block is not None and not isinstance(block, dict):
+        raise HTTPException(status_code=422, detail="`photon` block must be an object")
+    block = block or {}
+    route = block.get("route", "auto")
+    if route not in ("auto", "pin", "cascade"):
+        raise HTTPException(status_code=422, detail=f"invalid photon.route {route!r}")
+    if route == "cascade":
+        raise HTTPException(
+            status_code=400,
+            detail="photon.route 'cascade' requires Photon Core (not available in Ops)",
+        )
+    return {
+        "route": route,
+        "quality_bar": block.get("quality_bar"),
+        "latency_slo_ms": block.get("latency_slo_ms"),
+        "budget": block.get("budget"),
+    }
+
+
 @chat_router.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     payload = await request.json()
@@ -30,8 +57,12 @@ async def chat_completions(request: Request):
     request_id = uuid.uuid4().hex
     state = request.app.state
 
+    photon = parse_photon_block(payload)  # also strips `photon` from payload
+
     try:
-        decision = state.router.resolve(requested_model)
+        decision = state.router.resolve(
+            requested_model, allow_canary=(photon["route"] != "pin")
+        )
     except UnknownModelError:
         raise HTTPException(status_code=404, detail=f"unknown model {requested_model!r}")
 
@@ -45,6 +76,10 @@ async def chat_completions(request: Request):
         backend_model=backend.model,
         status="error",  # flipped to "ok" on success
         latency_ms=0.0,
+        route_mode=photon["route"],
+        quality_bar=photon["quality_bar"],
+        latency_slo_ms=photon["latency_slo_ms"],
+        budget=photon["budget"],
     )
 
     if payload.get("stream") is True:
@@ -67,6 +102,82 @@ async def chat_completions(request: Request):
             backend.pricing, record.prompt_tokens, record.completion_tokens
         )
         shadow_name = state.shadow.candidate(backend.name, payload.get("messages", []))
+        if shadow_name is not None:
+            shadow_backend = state.config.backend(shadow_name)
+            record.shadow_backend = shadow_name
+            record.shadow_est_cost_usd = compute_cost_usd(
+                shadow_backend.pricing, record.prompt_tokens, record.completion_tokens
+            )
+    state.store.insert(record)
+    metrics.observe(record)
+
+    return JSONResponse(
+        response,
+        headers={"X-Photon-Request-Id": request_id, "X-Photon-Backend": backend.name},
+    )
+
+
+@chat_router.post("/v1/completions")
+async def completions(request: Request):
+    """Legacy (non-chat) completions. Non-streaming only — use
+    /v1/chat/completions for SSE streaming."""
+    payload = await request.json()
+    if payload.get("stream") is True:
+        raise HTTPException(
+            status_code=400,
+            detail="streaming not supported on /v1/completions; use /v1/chat/completions",
+        )
+    tenant = request.headers.get("x-photon-tenant", "default")
+    requested_model = payload.get("model", AUTO_MODEL)
+    request_id = uuid.uuid4().hex
+    state = request.app.state
+
+    photon = parse_photon_block(payload)
+    try:
+        decision = state.router.resolve(
+            requested_model, allow_canary=(photon["route"] != "pin")
+        )
+    except UnknownModelError:
+        raise HTTPException(status_code=404, detail=f"unknown model {requested_model!r}")
+
+    backend = decision.backend
+    record = RequestRecord(
+        request_id=request_id,
+        tenant=tenant,
+        ts=time.time(),
+        requested_model=requested_model,
+        routed_backend=backend.name,
+        backend_model=backend.model,
+        status="error",
+        latency_ms=0.0,
+        route_mode=photon["route"],
+        quality_bar=photon["quality_bar"],
+        latency_slo_ms=photon["latency_slo_ms"],
+        budget=photon["budget"],
+    )
+
+    try:
+        response, latency_ms = await state.proxy.completions(backend, payload)
+    except BackendError as exc:
+        state.store.insert(record)
+        metrics.observe(record)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    record.status = "ok"
+    record.latency_ms = latency_ms
+    usage = response.get("usage") or {}
+    record.prompt_tokens = usage.get("prompt_tokens")
+    record.completion_tokens = usage.get("completion_tokens")
+    if record.prompt_tokens is not None and record.completion_tokens is not None:
+        record.cost_usd = compute_cost_usd(
+            backend.pricing, record.prompt_tokens, record.completion_tokens
+        )
+        # synthesize a message list from the prompt so the shadow char-heuristic applies
+        prompt = payload.get("prompt")
+        pseudo_messages = (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else []
+        )
+        shadow_name = state.shadow.candidate(backend.name, pseudo_messages)
         if shadow_name is not None:
             shadow_backend = state.config.backend(shadow_name)
             record.shadow_backend = shadow_name
