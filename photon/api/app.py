@@ -10,6 +10,12 @@ from photon.api.chat import chat_router
 from photon.api.metrics import metrics_router
 from photon.backends.openai_proxy import OpenAIProxy
 from photon.config import PhotonConfig
+from photon.observability import (
+    RequestLogMiddleware,
+    init_sentry,
+    init_tracing,
+    setup_logging,
+)
 from photon.registry.store import RegistryStore
 from photon.router.shadow import ShadowPolicy
 from photon.router.static import StaticRouter
@@ -25,6 +31,9 @@ def create_app(
     db_path = db_path or os.environ.get("PHOTON_DB", "photon.db")
     registry_db = registry_db or os.environ.get("PHOTON_REGISTRY_DB", "registry.db")
 
+    setup_logging()
+    init_sentry()  # no-op unless SENTRY_DSN is set
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0))
@@ -33,6 +42,8 @@ def create_app(
         await app.state.http.aclose()
 
     app = FastAPI(title="photon", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(RequestLogMiddleware)
+    init_tracing(app)  # no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set
     app.state.config = config
     app.state.router = StaticRouter(config)
     app.state.shadow = ShadowPolicy(config)

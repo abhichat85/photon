@@ -66,6 +66,25 @@ services:
     ports:
       - "3000:3000"
 
+  # Log aggregation. Promtail tails container logs (the structured JSON access
+  # lines Photon emits when PHOTON_LOG_JSON=1) and ships them to Loki, which
+  # Grafana reads via the provisioned datasource.
+  loki:
+    image: grafana/loki:3.1.0
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:3.1.0
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./observability/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
 volumes:
   photon-data:
   hf-cache:
