@@ -44,7 +44,10 @@ class CascadeController:
         signals = signals or EscalationSignals()
         score = self._policy.predict_acceptable(features)
 
-        # hard cost cap wins over everything
+        # hard cost cap wins over everything — including a known schema failure.
+        # A tenant at zero budget is served the cheap result even if it already
+        # failed validation: the budget is a hard ceiling by design. (Product
+        # note: revisit if regulated tenants need "fail rather than serve invalid".)
         if signals.budget_remaining is not None and signals.budget_remaining <= 0:
             return CascadeDecision(target=self._cheap, reason="budget-cheap", policy_score=score)
         if not signals.schema_valid:

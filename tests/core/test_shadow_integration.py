@@ -44,6 +44,34 @@ def test_shadow_router_logs_but_does_not_change_backend(tmp_path):
     assert logged[0].would_route.model_id == "cheap"
 
 
+@respx.mock
+def test_shadow_router_observes_completions_path_too(tmp_path):
+    # the /v1/completions legacy path must also feed the shadow study (no blind spot)
+    from fastapi.testclient import TestClient
+
+    from photon.api.app import create_app
+    from tests.test_config import VALID
+
+    completion_response = {
+        "choices": [{"index": 0, "text": "hi", "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+    }
+    respx.post("http://big.test/v1/completions").mock(return_value=httpx.Response(200, json=completion_response))
+    app = create_app(config=PhotonConfig.model_validate(VALID),
+                     db_path=str(tmp_path / "t.db"), registry_db=str(tmp_path / "r.db"))
+    logged = []
+    learned = LearnedRouter(StubPolicy(), 0.6, RouteTarget(model_id="cheap"), RouteTarget(model_id="big"))
+    app.state.shadow_router = ShadowRouter(learned, sink=logged.append)
+
+    with TestClient(app) as c:
+        r = c.post("/v1/completions", json={"model": "photon-auto", "prompt": "hi"},
+                   headers={"X-Photon-Tenant": "px"})
+    assert r.status_code == 200
+    assert r.headers["X-Photon-Backend"] == "big"  # served backend unchanged
+    assert len(logged) == 1
+    assert logged[0].would_route.model_id == "cheap"  # counterfactual logged
+
+
 def test_no_shadow_router_is_a_noop(client):
     # default app has no shadow_router set → request path works normally
     import respx as _respx

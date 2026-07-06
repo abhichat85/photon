@@ -153,6 +153,20 @@ async def completions(request: Request):
         raise HTTPException(status_code=404, detail=f"unknown model {requested_model!r}")
 
     backend = decision.backend
+
+    shadow = getattr(state, "shadow_router", None)
+    if shadow is not None:
+        from photon.core.features import extract_features
+
+        prompt = payload.get("prompt")
+        pseudo_messages = (
+            [{"role": "user", "content": prompt}] if isinstance(prompt, str) else []
+        )
+        feats = extract_features(
+            messages=pseudo_messages, tenant=tenant, route_hint=photon["route"]
+        )
+        shadow.observe(actual_backend_name=backend.name, features=feats, request_id=request_id)
+
     record = RequestRecord(
         request_id=request_id,
         tenant=tenant,

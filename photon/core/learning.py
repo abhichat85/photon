@@ -42,7 +42,13 @@ class ReplayHarness:
                 always_big_regret=0.0, est_savings_vs_always_big=0.0,
             )
         policy = PolicyModel()
-        policy.fit([r.features for r in rows], [int(r.cheap_acceptable) for r in rows])
+        labels = [int(r.cheap_acceptable) for r in rows]
+        # sklearn cannot fit a classifier on a single-class window (all rows
+        # acceptable, or none). Real nightly telemetry can produce these. Skip
+        # training in that case — the untrained policy fails closed (predicts
+        # 0.0), so nothing routes cheap, rather than crashing the nightly job.
+        if len(set(labels)) >= 2:
+            policy.fit([r.features for r in rows], labels)
         cheap = RouteTarget(model_id="cheap")
         big = RouteTarget(model_id="big")
         controller = CascadeController(policy, self._threshold, cheap, big)
