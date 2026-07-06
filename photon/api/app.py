@@ -52,6 +52,7 @@ def create_app(
     app.state.registry = RegistryStore(registry_db)
     app.state.fleet_manager = FleetManager()
     app.state.fleet_plan = None  # set by POST /photon/v1/fleet
+    app.state.shadow_router = None  # set to a ShadowRouter to enable shadow logging
     app.include_router(chat_router)
     app.include_router(admin_router)
     app.include_router(metrics_router)

@@ -67,6 +67,18 @@ async def chat_completions(request: Request):
         raise HTTPException(status_code=404, detail=f"unknown model {requested_model!r}")
 
     backend = decision.backend
+
+    shadow = getattr(state, "shadow_router", None)
+    if shadow is not None:
+        from photon.core.features import extract_features
+
+        feats = extract_features(
+            messages=payload.get("messages", []),
+            tenant=tenant,
+            route_hint=photon["route"],
+        )
+        shadow.observe(actual_backend_name=backend.name, features=feats, request_id=request_id)
+
     record = RequestRecord(
         request_id=request_id,
         tenant=tenant,
