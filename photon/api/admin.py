@@ -3,6 +3,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from photon.core.fleet import FleetSpec
+
 admin_router = APIRouter(prefix="/photon/v1")
 
 
@@ -42,6 +44,7 @@ async def fleet_status(request: Request, probe: bool = False):
         if probe:
             entry["reachable"] = await _probe(request.app.state.http, b.base_url)
         backends.append(entry)
+    plan = request.app.state.fleet_plan
     return {
         "backends": backends,
         "routing": {
@@ -50,6 +53,7 @@ async def fleet_status(request: Request, probe: bool = False):
             "canary": routing.canary.model_dump() if routing.canary else None,
             "shadow_enabled": routing.shadow.enabled,
         },
+        "residency": plan.model_dump() if plan else None,
     }
 
 
@@ -84,3 +88,13 @@ async def register_adapter(request: Request, body: AdapterRegistration):
             raise HTTPException(status_code=422, detail=str(exc))
         mv = registry.get(body.name, mv.version)
     return mv.model_dump()
+
+
+@admin_router.post("/fleet")
+async def apply_fleet(request: Request, spec: FleetSpec):
+    try:
+        plan = request.app.state.fleet_manager.plan(spec)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    request.app.state.fleet_plan = plan
+    return plan.model_dump()

@@ -13,10 +13,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+core = [
+    "scikit-learn>=1.4",
+    "numpy>=1.26",
+]
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
+    "scikit-learn>=1.4",
+    "numpy>=1.26",
 ]
 # Optional production observability. The code is a safe no-op without these
 # (see photon/observability.py); install the extra AND set the matching env var

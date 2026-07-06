@@ -10,6 +10,7 @@ from photon.api.chat import chat_router
 from photon.api.metrics import metrics_router
 from photon.backends.openai_proxy import OpenAIProxy
 from photon.config import PhotonConfig
+from photon.core.fleet import FleetManager
 from photon.observability import (
     RequestLogMiddleware,
     init_sentry,
@@ -49,6 +50,9 @@ def create_app(
     app.state.shadow = ShadowPolicy(config)
     app.state.store = TelemetryStore(db_path)
     app.state.registry = RegistryStore(registry_db)
+    app.state.fleet_manager = FleetManager()
+    app.state.fleet_plan = None  # set by POST /photon/v1/fleet
+    app.state.shadow_router = None  # set to a ShadowRouter to enable shadow logging
     app.include_router(chat_router)
     app.include_router(admin_router)
     app.include_router(metrics_router)
