@@ -76,6 +76,7 @@ async def chat_completions(request: Request):
             messages=payload.get("messages", []),
             tenant=tenant,
             route_hint=photon["route"],
+            tenant_recent_accept_rate=state.store.recent_ok_rate(tenant),
         )
         shadow.observe(actual_backend_name=backend.name, features=feats, request_id=request_id)
 
@@ -163,7 +164,10 @@ async def completions(request: Request):
             [{"role": "user", "content": prompt}] if isinstance(prompt, str) else []
         )
         feats = extract_features(
-            messages=pseudo_messages, tenant=tenant, route_hint=photon["route"]
+            messages=pseudo_messages,
+            tenant=tenant,
+            route_hint=photon["route"],
+            tenant_recent_accept_rate=state.store.recent_ok_rate(tenant),
         )
         shadow.observe(actual_backend_name=backend.name, features=feats, request_id=request_id)
 

@@ -97,6 +97,40 @@ def test_shadow_decisions_persist_and_surface_on_admin_endpoint(tmp_path):
     assert body["decisions"][0]["would_model"] == "cheap"
 
 
+@respx.mock
+def test_shadow_features_carry_real_tenant_history(tmp_path):
+    # the history feature is computed from actual telemetry, not the 0.0 default
+    from fastapi.testclient import TestClient
+
+    from photon.api.app import create_app
+    from tests.test_config import VALID
+
+    respx.post("http://big.test/v1/chat/completions").mock(return_value=httpx.Response(200, json=CHAT_RESPONSE))
+    app = create_app(config=PhotonConfig.model_validate(VALID),
+                     db_path=str(tmp_path / "t.db"), registry_db=str(tmp_path / "r.db"),
+                     shadow_db=str(tmp_path / "s.db"))
+
+    seen_features = []
+
+    class Recorder:  # duck-typed shadow: capture the features the chat path builds
+        def observe(self, actual_backend_name, features, request_id):
+            seen_features.append(features)
+            return actual_backend_name
+
+    app.state.shadow_router = Recorder()
+    with TestClient(app) as c:
+        # request 1: no history yet → rate 0.0; it lands an "ok" telemetry row
+        c.post("/v1/chat/completions",
+               json={"model": "photon-auto", "messages": [{"role": "user", "content": "hi"}]},
+               headers={"X-Photon-Tenant": "hist"})
+        # request 2: history now exists → rate reflects the prior ok
+        c.post("/v1/chat/completions",
+               json={"model": "photon-auto", "messages": [{"role": "user", "content": "hi"}]},
+               headers={"X-Photon-Tenant": "hist"})
+    assert seen_features[0].tenant_recent_accept_rate == 0.0
+    assert seen_features[1].tenant_recent_accept_rate == 1.0
+
+
 def test_no_shadow_router_is_a_noop(client):
     # default app has no shadow_router set → request path works normally
     import respx as _respx

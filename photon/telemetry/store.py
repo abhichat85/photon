@@ -103,3 +103,18 @@ class TelemetryStore:
                 (tenant, limit),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def recent_ok_rate(self, tenant: str, limit: int = 200) -> float:
+        """Tenant history feature for the routing policy: share of the tenant's
+        most recent `limit` requests that succeeded. A PROXY for acceptance —
+        real quality labels arrive with the Tier-3 study; until then success
+        rate is the honest signal we actually have. Returns 0.0 with no history
+        (consistent with the policy model's fail-closed posture)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT AVG(CASE WHEN status = 'ok' THEN 1.0 ELSE 0.0 END)
+                   FROM (SELECT status FROM requests
+                         WHERE tenant = ? ORDER BY ts DESC LIMIT ?)""",
+                (tenant, limit),
+            ).fetchone()
+        return float(row[0]) if row[0] is not None else 0.0
