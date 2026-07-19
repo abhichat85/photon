@@ -72,6 +72,31 @@ def test_shadow_router_observes_completions_path_too(tmp_path):
     assert logged[0].would_route.model_id == "cheap"  # counterfactual logged
 
 
+@respx.mock
+def test_shadow_decisions_persist_and_surface_on_admin_endpoint(tmp_path):
+    # end-to-end: shadow router → durable ShadowDecisionStore → GET /photon/v1/shadow/decisions
+    from fastapi.testclient import TestClient
+
+    from photon.api.app import create_app
+    from tests.test_config import VALID
+
+    respx.post("http://big.test/v1/chat/completions").mock(return_value=httpx.Response(200, json=CHAT_RESPONSE))
+    app = create_app(config=PhotonConfig.model_validate(VALID),
+                     db_path=str(tmp_path / "t.db"), registry_db=str(tmp_path / "r.db"),
+                     shadow_db=str(tmp_path / "s.db"))
+    learned = LearnedRouter(StubPolicy(), 0.6, RouteTarget(model_id="cheap"), RouteTarget(model_id="big"))
+    app.state.shadow_router = ShadowRouter(learned, sink=app.state.shadow_store.insert)
+
+    with TestClient(app) as c:
+        c.post("/v1/chat/completions",
+               json={"model": "photon-auto", "messages": [{"role": "user", "content": "hi"}]})
+        body = c.get("/photon/v1/shadow/decisions").json()
+    assert body["summary"]["total"] == 1
+    assert body["summary"]["would_route_counts"] == {"cheap": 1}
+    assert body["decisions"][0]["actual_backend"] == "big"
+    assert body["decisions"][0]["would_model"] == "cheap"
+
+
 def test_no_shadow_router_is_a_noop(client):
     # default app has no shadow_router set → request path works normally
     import respx as _respx

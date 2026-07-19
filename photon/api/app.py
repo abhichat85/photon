@@ -11,6 +11,7 @@ from photon.api.metrics import metrics_router
 from photon.backends.openai_proxy import OpenAIProxy
 from photon.config import PhotonConfig
 from photon.core.fleet import FleetManager
+from photon.core.shadow_store import ShadowDecisionStore
 from photon.observability import (
     RequestLogMiddleware,
     init_sentry,
@@ -27,10 +28,12 @@ def create_app(
     config: PhotonConfig | None = None,
     db_path: str | None = None,
     registry_db: str | None = None,
+    shadow_db: str | None = None,
 ) -> FastAPI:
     config = config or PhotonConfig.from_yaml(os.environ["PHOTON_CONFIG"])
     db_path = db_path or os.environ.get("PHOTON_DB", "photon.db")
     registry_db = registry_db or os.environ.get("PHOTON_REGISTRY_DB", "registry.db")
+    shadow_db = shadow_db or os.environ.get("PHOTON_SHADOW_DB", "shadow.db")
 
     setup_logging()
     init_sentry()  # no-op unless SENTRY_DSN is set
@@ -52,6 +55,10 @@ def create_app(
     app.state.registry = RegistryStore(registry_db)
     app.state.fleet_manager = FleetManager()
     app.state.fleet_plan = None  # set by POST /photon/v1/fleet
+    # Shadow study plumbing: the durable store always exists (cheap); the shadow
+    # router itself stays opt-in. Enable with:
+    #   app.state.shadow_router = ShadowRouter(learned, sink=app.state.shadow_store.insert)
+    app.state.shadow_store = ShadowDecisionStore(shadow_db)
     app.state.shadow_router = None  # set to a ShadowRouter to enable shadow logging
     app.include_router(chat_router)
     app.include_router(admin_router)

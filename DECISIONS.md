@@ -18,10 +18,20 @@ SQLite (WAL, per-call connection).
 **Why:** Phase 0 runs a **single gateway replica** (see D3), so a per-pod
 embedded store is correct, zero-ops, and fast. Postgres adds a network hop, a
 service to run, and connection-pool management for no Phase-0 benefit.
+**Durability:** "embedded" must not be confused with "ephemeral". Both files sit
+on a ReadWriteOnce PVC (`persistence.enabled`, default on); the registry is
+pointed at it explicitly via `PHOTON_REGISTRY_DB=/data/registry.db`, because its
+fallback is a *relative* path that lands in the image WORKDIR and dies with the
+container. This decision only holds while the store it names actually survives a
+restart — telemetry is the audit truth and the registry is the record of what
+reached production. The PVC forces `strategy: Recreate` (RWO cannot be attached
+to two pods during a rolling update), which costs seconds of downtime and buys
+nothing back at replicas: 1.
 **Change trigger:** the moment the gateway needs >1 replica, telemetry and
 registry must move to Postgres (a shared store) — this is the *same* trigger as
-D3 and the spec's own "Postgres-backed telemetry unlocks replicas" note. Until
-then, SQLite is the deliberate choice, not a shortcut.
+D3 and the spec's own "Postgres-backed telemetry unlocks replicas" note. That
+migration also retires the PVC and the Recreate strategy together. Until then,
+SQLite is the deliberate choice, not a shortcut.
 
 ## D2 — W&B lives in fine-tuning, not the registry
 

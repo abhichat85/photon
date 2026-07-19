@@ -90,6 +90,14 @@ async def register_adapter(request: Request, body: AdapterRegistration):
     return mv.model_dump()
 
 
+@admin_router.get("/shadow/decisions")
+async def shadow_decisions(request: Request, limit: int = 100):
+    """The shadow study's readout: recent counterfactual decisions plus the
+    agreement/distribution summary that feeds the Tier-3 go/no-go analysis."""
+    store = request.app.state.shadow_store
+    return {"summary": store.summary(), "decisions": store.recent(limit)}
+
+
 @admin_router.post("/fleet")
 async def apply_fleet(request: Request, spec: FleetSpec):
     try:

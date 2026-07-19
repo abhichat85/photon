@@ -18,6 +18,7 @@ def client(config, tmp_path):
         config=config,
         db_path=str(tmp_path / "photon.db"),
         registry_db=str(tmp_path / "registry.db"),
+        shadow_db=str(tmp_path / "shadow.db"),
     )
     # `with` runs the lifespan (creates/closes the shared httpx client)
     with TestClient(app) as c:
