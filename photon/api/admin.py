@@ -99,10 +99,24 @@ async def shadow_decisions(request: Request, limit: int = 100):
 
 
 @admin_router.post("/fleet")
-async def apply_fleet(request: Request, spec: FleetSpec):
+async def apply_fleet(request: Request, spec: FleetSpec, enact: bool = False):
     try:
         plan = request.app.state.fleet_manager.plan(spec)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     request.app.state.fleet_plan = plan
-    return plan.model_dump()
+    if not enact:
+        return plan.model_dump()
+
+    # enact=true: push the plan to the live vLLM servers via runtime-LoRA.
+    # Controls are keyed by BOTH backend name and served model id, so a
+    # FleetSpec may reference bases either way.
+    from photon.core.enactment import FleetEnactor, VLLMAdapterControl
+
+    controls = {}
+    for b in request.app.state.config.backends:
+        control = VLLMAdapterControl(b.base_url, request.app.state.http)
+        controls[b.name] = control
+        controls[b.model] = control
+    report = await FleetEnactor(controls).enact(plan, spec)
+    return {"plan": plan.model_dump(), "enactment": report.model_dump()}
