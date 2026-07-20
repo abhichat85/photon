@@ -60,9 +60,24 @@ async def chat_completions(request: Request):
     photon = parse_photon_block(payload)  # also strips `photon` from payload
 
     try:
-        decision = state.router.resolve(
-            requested_model, allow_canary=(photon["route"] != "pin")
-        )
+        if getattr(state.router, "wants_features", False):
+            from photon.core.features import extract_features
+
+            route_feats = extract_features(
+                messages=payload.get("messages", []),
+                tenant=tenant,
+                route_hint=photon["route"],
+                tenant_recent_accept_rate=state.store.recent_ok_rate(tenant),
+            )
+            decision = state.router.resolve(
+                requested_model,
+                allow_canary=(photon["route"] != "pin"),
+                features=route_feats,
+            )
+        else:
+            decision = state.router.resolve(
+                requested_model, allow_canary=(photon["route"] != "pin")
+            )
     except UnknownModelError:
         raise HTTPException(status_code=404, detail=f"unknown model {requested_model!r}")
 
@@ -147,9 +162,26 @@ async def completions(request: Request):
 
     photon = parse_photon_block(payload)
     try:
-        decision = state.router.resolve(
-            requested_model, allow_canary=(photon["route"] != "pin")
-        )
+        if getattr(state.router, "wants_features", False):
+            from photon.core.features import extract_features
+
+            _p = payload.get("prompt")
+            _pm = [{"role": "user", "content": _p}] if isinstance(_p, str) else []
+            route_feats = extract_features(
+                messages=_pm,
+                tenant=tenant,
+                route_hint=photon["route"],
+                tenant_recent_accept_rate=state.store.recent_ok_rate(tenant),
+            )
+            decision = state.router.resolve(
+                requested_model,
+                allow_canary=(photon["route"] != "pin"),
+                features=route_feats,
+            )
+        else:
+            decision = state.router.resolve(
+                requested_model, allow_canary=(photon["route"] != "pin")
+            )
     except UnknownModelError:
         raise HTTPException(status_code=404, detail=f"unknown model {requested_model!r}")
 

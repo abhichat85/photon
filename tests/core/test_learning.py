@@ -30,6 +30,38 @@ def test_harness_handles_empty():
     assert report.routed_cheap_share == 0.0
 
 
+def test_report_tracks_oracle_agreement():
+    report = ReplayHarness(threshold=0.6).run(_rows())
+    assert report.oracle_matches > 0
+    assert report.oracle_match_share == report.oracle_matches / report.trained_on
+    assert report.oracle_match_share > 0.8  # separable pattern → high agreement
+
+
+def test_register_policy_version_flows_through_gated_registry(tmp_path):
+    # the ROUTER is versioned + promotion-gated like any other model
+    from photon.core.learning import register_policy_version
+    from photon.core.policy import PolicyModel
+    from photon.registry.store import RegistryStore
+
+    rows = _rows()
+    report = ReplayHarness(threshold=0.6).run(rows)
+    policy = PolicyModel()
+    policy.fit([r.features for r in rows], [int(r.cheap_acceptable) for r in rows])
+
+    registry = RegistryStore(tmp_path / "r.db")
+    mv = register_policy_version(registry, policy, report, tmp_path / "policy.joblib")
+    assert mv.name == "router-policy"
+    assert mv.status == "draft"
+    assert (tmp_path / "policy.joblib").exists()
+
+    # promotion passes the same eval gate adapters face (oracle agreement >= bar)
+    registry.promote("router-policy", mv.version, min_pass_rate=0.8)
+    assert registry.production("router-policy").version == mv.version
+    # and the persisted artifact round-trips into a usable policy
+    loaded = PolicyModel.load(mv.adapter_path)
+    assert 0.0 <= loaded.predict_acceptable(rows[0].features) <= 1.0
+
+
 def test_harness_handles_single_class_window():
     # a telemetry window where EVERY request was cheap-acceptable — sklearn
     # cannot fit a classifier on one class. The harness must not crash; with no
