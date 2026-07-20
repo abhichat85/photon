@@ -130,6 +130,42 @@ GPU utilization) is real work that shouldn't be improvised during a deployment.
 **Change trigger:** traffic that justifies it; then a custom-metrics HPA, planned
 deliberately. Documented in every cloud runbook's §5.
 
+## D10 — Shadow persistence + the acceptance-rate proxy
+
+**Decision:** shadow decisions persist to a dedicated SQLite store
+(`PHOTON_SHADOW_DB`, surfaced at `GET /photon/v1/shadow/decisions`), and the
+policy's tenant-history feature is `recent_ok_rate` — the share of the tenant's
+recent requests that *succeeded*.
+**Why the proxy:** true "acceptance" labels (was the cheap model's answer good
+enough?) only exist after the Tier-3 study grades counterfactuals. Success rate
+is the honest signal available today; it feeds the same feature slot and is
+replaced by graded labels when they exist. Naming it a proxy here prevents it
+from quietly being treated as ground truth.
+**Change trigger:** Tier-3 grading pipeline produces real acceptance labels.
+
+## D11 — Learned routing is a capability, not a default
+
+**Decision:** `LearnedRoutingAdapter` makes the learned engine a drop-in for
+`resolve()` (proven end-to-end in tests), but `create_app` always installs the
+static router. Enabling learned routing in production is a deliberate act,
+gated on the Tier-3 shadow-study result, and rolls out shadow → canary → full.
+Fail-safe by construction: alias/direct/pin/featureless requests always fall
+back to the static path, and the router policy itself must pass the registry's
+promotion gate (oracle agreement as its eval report) like any other model.
+**Change trigger:** shadow study ≥ 25% confidently-routable (spec §7 exit gate).
+
+## D12 — Pipelines are per-process, sequential-chain, budget-enforced
+
+**Decision:** pipeline specs register in-memory per boot (config-like, same
+posture as the fleet plan); execution is a sequential chain with per-stage
+RouteTargets and an end-to-end latency budget enforced between stages.
+**Why:** the sequential chain is Praxiom-1's actual shape; branching DAGs and
+on-GPU cross-stage KV/prefix reuse belong to the Tier-2 engine that owns GPU
+memory — building them against a mocked backend would be shape without
+substance.
+**Change trigger:** the Tier-2 dense engine lands behind ServingBackend; the
+orchestrator then gains what only real GPU residency makes meaningful.
+
 ---
 
 ## The Ops / Core line (what is deliberately NOT here)
