@@ -10,7 +10,9 @@ from photon.api.chat import chat_router
 from photon.api.metrics import metrics_router
 from photon.backends.openai_proxy import OpenAIProxy
 from photon.config import PhotonConfig
+from photon.api.pipelines import pipelines_router
 from photon.core.fleet import FleetManager
+from photon.core.serving import VLLMServingBackend
 from photon.core.shadow_store import ShadowDecisionStore
 from photon.observability import (
     RequestLogMiddleware,
@@ -42,6 +44,11 @@ def create_app(
     async def lifespan(app: FastAPI):
         app.state.http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0))
         app.state.proxy = OpenAIProxy(app.state.http)
+        # pipeline execution runs against the ServingBackend seam; the Tier-2
+        # dense engine replaces this construction without touching the API
+        app.state.serving_backend = VLLMServingBackend(
+            {b.name: b for b in config.backends}, app.state.http
+        )
         yield
         await app.state.http.aclose()
 
@@ -60,9 +67,11 @@ def create_app(
     #   app.state.shadow_router = ShadowRouter(learned, sink=app.state.shadow_store.insert)
     app.state.shadow_store = ShadowDecisionStore(shadow_db)
     app.state.shadow_router = None  # set to a ShadowRouter to enable shadow logging
+    app.state.pipelines = {}  # id -> PipelineSpec; per-process, config-like
     app.include_router(chat_router)
     app.include_router(admin_router)
     app.include_router(metrics_router)
+    app.include_router(pipelines_router)
     return app
 
 
