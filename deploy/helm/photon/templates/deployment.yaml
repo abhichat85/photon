@@ -6,6 +6,15 @@ metadata:
     app: {{ .Release.Name }}
 spec:
   replicas: {{ .Values.replicas }}
+  {{- if .Values.persistence.enabled }}
+  # Recreate, not RollingUpdate: the data PVC is ReadWriteOnce, so a rolling
+  # update would deadlock — the new pod cannot attach the volume the outgoing
+  # pod still holds. Trading a few seconds of downtime for a rollout that
+  # actually completes is correct at replicas: 1, where a rolling update buys
+  # no availability anyway.
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       app: {{ .Release.Name }}
@@ -27,6 +36,13 @@ spec:
               value: /etc/photon/fleet.yaml
             - name: PHOTON_DB
               value: /data/photon.db
+            # Without this the registry falls back to a relative "registry.db",
+            # landing in the image's WORKDIR (/app) — the container layer, which
+            # does not survive a restart. Promotion history is the most
+            # durability-critical state the gateway holds; it belongs on /data
+            # next to the telemetry it is audited against.
+            - name: PHOTON_REGISTRY_DB
+              value: /data/registry.db
           volumeMounts:
             - name: config
               mountPath: /etc/photon
@@ -47,4 +63,11 @@ spec:
           configMap:
             name: {{ .Release.Name }}-config
         - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data
+          {{- else }}
+          # Opt-out for ephemeral installs (CI, kind, throwaway demos) only.
+          # Telemetry and registry are lost on every pod restart in this mode.
           emptyDir: {}
+          {{- end }}

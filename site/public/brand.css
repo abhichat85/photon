@@ -1,0 +1,46 @@
+/* Einstein Labs brand kit — Relativity font + tokens.
+   Copy this file together with the two .woff2 files into your project
+   (e.g. public/brand/). Font paths are relative to this stylesheet. */
+
+@font-face {
+  font-family: "Relativity";
+  src: url("./Relativity-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Relativity";
+  src: url("./Relativity-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* usage: font-family: var(--font-display) for headlines/wordmarks only.
+     Body/UI text stays on your workhorse font. */
+  --font-display: "Relativity", system-ui, sans-serif;
+
+  /* parent brand */
+  --el-green: #0f2e22;
+  --el-green-2: #143a2b;
+  --el-gold: #d4a72c;
+  --el-ink-on-dark: #f2efe8;
+  --el-ink-on-light: #12251c;
+
+  /* product accents */
+  --accent-einstein-labs: #7fb069;
+  --accent-pulse: #ff6b5e;
+  --accent-prism: #b085f5;
+  --accent-parallax: #4fd1c5;
+  --accent-pylon: #ff9f43;
+  --accent-photon: #ffd166;
+  --accent-agentfast: #a3e635;
+  --accent-pmeval: #94a3b8;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+}

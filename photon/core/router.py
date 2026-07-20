@@ -26,6 +26,39 @@ class LearnedRouter:
         return self._cascade.decide(features, signals).target
 
 
+class LearnedRoutingAdapter:
+    """The learned engine behind StaticRouter's resolve() interface — §3's
+    'Core replaces the static table without an API change', as an exercisable
+    code path. DEFAULT OFF: create_app never installs this; going live is
+    Tier-3 gated (shadow study → canary → full, per the spec's §4.2 lifecycle).
+
+    Routing scope is deliberately narrow and fail-safe:
+    - only `photon-auto` requests with features are learned-routed;
+    - alias/direct requests, `route: pin`, and featureless calls all fall
+      back to the static router unchanged;
+    - a learned target naming an unknown backend falls back to static.
+    Reasons are prefixed 'learned-' so the audit log distinguishes engines."""
+
+    wants_features = True  # chat handlers pass extracted features when set
+
+    def __init__(self, learned: LearnedRouter, static, config):
+        self._learned = learned
+        self._static = static
+        self._config = config
+
+    def resolve(self, requested_model: str, allow_canary: bool = True, features=None):
+        from photon.router.static import AUTO_MODEL, RouteDecision
+
+        if requested_model != AUTO_MODEL or not allow_canary or features is None:
+            return self._static.resolve(requested_model, allow_canary)
+        decision = self._learned._cascade.decide(features)
+        try:
+            backend = self._config.backend(decision.target.model_id)
+        except KeyError:
+            return self._static.resolve(requested_model, allow_canary)
+        return RouteDecision(backend=backend, reason=f"learned-{decision.reason}")
+
+
 class ShadowDecision(BaseModel):
     request_id: str
     actual_backend: str

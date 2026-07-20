@@ -62,3 +62,22 @@ def test_recent_decisions_orders_newest_first_and_limits(store):
     rows = store.recent_decisions("praxiom", limit=1)
     assert len(rows) == 1
     assert rows[0]["request_id"] == "new"
+
+
+def test_recent_ok_rate_over_window(store):
+    store.insert(make_record(request_id="a", status="ok"))
+    store.insert(make_record(request_id="b", status="ok"))
+    store.insert(make_record(request_id="c", status="error"))
+    assert store.recent_ok_rate("praxiom") == pytest.approx(2 / 3)
+
+
+def test_recent_ok_rate_no_history_is_zero(store):
+    assert store.recent_ok_rate("nobody") == 0.0
+
+
+def test_recent_ok_rate_respects_window_limit(store):
+    # oldest is an error, but with limit=2 only the two newest (ok) rows count
+    store.insert(make_record(request_id="a", status="error", ts=100.0))
+    store.insert(make_record(request_id="b", status="ok", ts=200.0))
+    store.insert(make_record(request_id="c", status="ok", ts=300.0))
+    assert store.recent_ok_rate("praxiom", limit=2) == 1.0

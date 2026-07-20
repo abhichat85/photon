@@ -18,10 +18,20 @@ SQLite (WAL, per-call connection).
 **Why:** Phase 0 runs a **single gateway replica** (see D3), so a per-pod
 embedded store is correct, zero-ops, and fast. Postgres adds a network hop, a
 service to run, and connection-pool management for no Phase-0 benefit.
+**Durability:** "embedded" must not be confused with "ephemeral". Both files sit
+on a ReadWriteOnce PVC (`persistence.enabled`, default on); the registry is
+pointed at it explicitly via `PHOTON_REGISTRY_DB=/data/registry.db`, because its
+fallback is a *relative* path that lands in the image WORKDIR and dies with the
+container. This decision only holds while the store it names actually survives a
+restart — telemetry is the audit truth and the registry is the record of what
+reached production. The PVC forces `strategy: Recreate` (RWO cannot be attached
+to two pods during a rolling update), which costs seconds of downtime and buys
+nothing back at replicas: 1.
 **Change trigger:** the moment the gateway needs >1 replica, telemetry and
 registry must move to Postgres (a shared store) — this is the *same* trigger as
-D3 and the spec's own "Postgres-backed telemetry unlocks replicas" note. Until
-then, SQLite is the deliberate choice, not a shortcut.
+D3 and the spec's own "Postgres-backed telemetry unlocks replicas" note. That
+migration also retires the PVC and the Recreate strategy together. Until then,
+SQLite is the deliberate choice, not a shortcut.
 
 ## D2 — W&B lives in fine-tuning, not the registry
 
@@ -119,6 +129,42 @@ gets the full IaC module (GKE/AKS Terraform follows the same module shape).
 GPU utilization) is real work that shouldn't be improvised during a deployment.
 **Change trigger:** traffic that justifies it; then a custom-metrics HPA, planned
 deliberately. Documented in every cloud runbook's §5.
+
+## D10 — Shadow persistence + the acceptance-rate proxy
+
+**Decision:** shadow decisions persist to a dedicated SQLite store
+(`PHOTON_SHADOW_DB`, surfaced at `GET /photon/v1/shadow/decisions`), and the
+policy's tenant-history feature is `recent_ok_rate` — the share of the tenant's
+recent requests that *succeeded*.
+**Why the proxy:** true "acceptance" labels (was the cheap model's answer good
+enough?) only exist after the Tier-3 study grades counterfactuals. Success rate
+is the honest signal available today; it feeds the same feature slot and is
+replaced by graded labels when they exist. Naming it a proxy here prevents it
+from quietly being treated as ground truth.
+**Change trigger:** Tier-3 grading pipeline produces real acceptance labels.
+
+## D11 — Learned routing is a capability, not a default
+
+**Decision:** `LearnedRoutingAdapter` makes the learned engine a drop-in for
+`resolve()` (proven end-to-end in tests), but `create_app` always installs the
+static router. Enabling learned routing in production is a deliberate act,
+gated on the Tier-3 shadow-study result, and rolls out shadow → canary → full.
+Fail-safe by construction: alias/direct/pin/featureless requests always fall
+back to the static path, and the router policy itself must pass the registry's
+promotion gate (oracle agreement as its eval report) like any other model.
+**Change trigger:** shadow study ≥ 25% confidently-routable (spec §7 exit gate).
+
+## D12 — Pipelines are per-process, sequential-chain, budget-enforced
+
+**Decision:** pipeline specs register in-memory per boot (config-like, same
+posture as the fleet plan); execution is a sequential chain with per-stage
+RouteTargets and an end-to-end latency budget enforced between stages.
+**Why:** the sequential chain is Praxiom-1's actual shape; branching DAGs and
+on-GPU cross-stage KV/prefix reuse belong to the Tier-2 engine that owns GPU
+memory — building them against a mocked backend would be shape without
+substance.
+**Change trigger:** the Tier-2 dense engine lands behind ServingBackend; the
+orchestrator then gains what only real GPU residency makes meaningful.
 
 ---
 

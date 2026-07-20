@@ -1,0 +1,116 @@
+/* Einstein Labs brand kit — Frontier type system + tokens.
+   Type trio (all SIL Open Font License, self-hosted):
+     Fraunces        — display serif (variable: opsz, wght, SOFT, WONK)
+     Space Grotesk   — body / UI sans (variable: wght 300-700)
+     JetBrains Mono  — labels, eyebrows, code (variable: wght 100-800)
+   Copy this file together with the five .woff2 files (and the OFL-*.txt
+   licenses) into your project (e.g. public/brand/). Font paths are relative
+   to this stylesheet. */
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("./Fraunces-Var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fraunces";
+  src: url("./Fraunces-Italic-Var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("./SpaceGrotesk-Var.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./JetBrainsMono-Var.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./JetBrainsMono-Italic-Var.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  /* type roles — reference these, never raw family names */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* parent brand */
+  --el-green: #0f2e22;
+  --el-green-2: #143a2b;
+  --el-gold: #d4a72c;
+  --el-ink-on-dark: #f2efe8;
+  --el-ink-on-light: #12251c;
+
+  /* product accents */
+  --accent-einstein-labs: #7fb069;
+  --accent-pulse: #ff6b5e;
+  --accent-prism: #b085f5;
+  --accent-parallax: #4fd1c5;
+  --accent-pylon: #ff9f43;
+  --accent-photon: #ffd166;
+  --accent-agentfast: #a3e635;
+  --accent-pmeval: #94a3b8;
+}
+
+/* Usage recipes — extracted from the reference design so every project
+   reproduces the same voice. */
+
+/* Hero / mega display: dense wonky Fraunces, tight tracking */
+.display-hero {
+  font-family: var(--font-display);
+  font-weight: 560;
+  font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+}
+.display-hero em, .display-hero .accent-italic {
+  font-style: italic;
+  font-weight: 340;
+  font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144;
+}
+
+/* Large serif pull-quote, italic */
+.display-quote {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-variation-settings: "SOFT" 100, "WONK" 1, "opsz" 144;
+}
+
+/* Serif running text (large paragraphs) */
+.display-text {
+  font-family: var(--font-display);
+  font-weight: 460;
+  font-variation-settings: "opsz" 60;
+}
+
+/* Mono eyebrow / section label */
+.label-mono {
+  font-family: var(--font-mono);
+  font-weight: 340;
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* Body default */
+.body-sans {
+  font-family: var(--font-sans);
+  font-weight: 340;
+  letter-spacing: 0.01em;
+}

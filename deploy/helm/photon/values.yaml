@@ -8,6 +8,18 @@ image:
 # replicas > 1.
 replicas: 1
 
+# Both SQLite files (telemetry + registry) live on this volume. Keep it
+# enabled: DECISIONS.md D1 treats the telemetry row as the audit truth and the
+# registry as the record of what reached production, and neither survives a
+# restart without it. Disable only for throwaway installs where losing both is
+# the point (CI, kind).
+persistence:
+  enabled: true
+  size: 10Gi
+  # Leave empty to use the cluster default StorageClass. Set explicitly on EKS
+  # (e.g. gp3) — see deploy/EKS.md.
+  storageClass: ""
+
 config: |
   backends:
     - name: big

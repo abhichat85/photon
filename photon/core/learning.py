@@ -28,6 +28,11 @@ class ReplayReport(BaseModel):
     regret: float
     always_big_regret: float
     est_savings_vs_always_big: float
+    # oracle agreement: decisions matching the cheapest-acceptable choice.
+    # This is the pass/total pair the registry's promotion gate consumes when
+    # a policy version is registered (register_policy_version).
+    oracle_matches: int = 0
+    oracle_match_share: float = 0.0
     policy_scores: list[float] = Field(default_factory=list)
 
 
@@ -56,6 +61,7 @@ class ReplayHarness:
         replay: list[ReplayRow] = []
         always_big: list[ReplayRow] = []
         cheap_count = 0
+        oracle_matches = 0
         chosen_total = 0.0
         big_total = 0.0
         scores: list[float] = []
@@ -63,6 +69,9 @@ class ReplayHarness:
             d = controller.decide(r.features)
             scores.append(d.policy_score)
             oracle = r.cheap_cost if r.cheap_acceptable else r.big_cost
+            # oracle picks cheap iff acceptable; match = same choice
+            if (d.target.model_id == "cheap") == r.cheap_acceptable:
+                oracle_matches += 1
             if d.target.model_id == "cheap":
                 cheap_count += 1
                 # a cheap route on an unacceptable row "costs" the big price (a retry)
@@ -81,5 +90,24 @@ class ReplayHarness:
             regret=router_regret(replay),
             always_big_regret=router_regret(always_big),
             est_savings_vs_always_big=max(0.0, savings),
+            oracle_matches=oracle_matches,
+            oracle_match_share=oracle_matches / len(rows),
             policy_scores=scores,
         )
+
+
+def register_policy_version(registry, policy: PolicyModel, report: ReplayReport, artifact_path):
+    """Version the ROUTER itself through the same gated registry as adapters:
+    the policy artifact is saved, and the replay report's oracle agreement
+    becomes the eval_report the promotion gate consumes. A policy that hasn't
+    demonstrated agreement on replay cannot be promoted — same discipline as
+    a fine-tuned model. Promotion to live remains additionally Tier-3 gated."""
+    import json
+
+    policy.save(artifact_path)
+    eval_report = json.dumps(
+        {"passed": report.oracle_matches, "total": report.trained_on}
+    )
+    return registry.register(
+        "router-policy", "cheap-features-logreg", str(artifact_path), eval_report
+    )

@@ -26,6 +26,53 @@ def test_learned_router_decides_cheap_when_confident():
     assert r.decide(_feat()).model_id == "cheap"
 
 
+def test_learned_adapter_is_dropin_for_resolve():
+    # §3's promise, exercised: the learned engine behind the SAME resolve()
+    # interface. AUTO with features → learned decision mapped to a real backend;
+    # alias/direct stay static; reasons are prefixed for the audit log.
+    from photon.config import PhotonConfig
+    from photon.core.router import LearnedRoutingAdapter
+    from tests.test_config import VALID
+
+    cfg = PhotonConfig.model_validate(VALID)
+    from photon.router.static import AUTO_MODEL, StaticRouter
+
+    static = StaticRouter(cfg)
+    learned = LearnedRouter(
+        StubPolicy(0.99), 0.6,
+        cheap=RouteTarget(model_id="small"), big=RouteTarget(model_id="big"),
+    )
+    adapter = LearnedRoutingAdapter(learned, static, cfg)
+    assert adapter.wants_features is True
+
+    d = adapter.resolve(AUTO_MODEL, features=_feat())
+    assert d.backend.name == "small"
+    assert d.reason == "learned-policy-cheap"
+    # alias and direct requests are never learned-routed
+    assert adapter.resolve("praxiom-chat", features=_feat()).reason == "alias"
+    assert adapter.resolve("small", features=_feat()).reason == "direct"
+
+
+def test_learned_adapter_fails_safe_to_static():
+    # pin (allow_canary=False) and missing features both fall back to the
+    # static default — the learned path can never be the only path.
+    from photon.config import PhotonConfig
+    from photon.core.router import LearnedRoutingAdapter
+    from photon.router.static import AUTO_MODEL, StaticRouter
+    from tests.test_config import VALID
+
+    cfg = PhotonConfig.model_validate(VALID)
+    learned = LearnedRouter(
+        StubPolicy(0.99), 0.6,
+        cheap=RouteTarget(model_id="small"), big=RouteTarget(model_id="big"),
+    )
+    adapter = LearnedRoutingAdapter(learned, StaticRouter(cfg), cfg)
+    pinned = adapter.resolve(AUTO_MODEL, allow_canary=False, features=_feat())
+    assert pinned.backend.name == "big" and pinned.reason == "default"
+    featureless = adapter.resolve(AUTO_MODEL)  # no features → static
+    assert featureless.backend.name == "big" and featureless.reason == "default"
+
+
 def test_shadow_router_returns_actual_but_logs_counterfactual():
     logged = []
     learned = LearnedRouter(
