@@ -1,10 +1,13 @@
 # tests/core/test_isolation.py
 """Adversarial tenant-isolation checks (spec §9 'zero cross-tenant leakage,
-tested adversarially'). These assert the guarantees Photon can actually make at
-its layer: telemetry, cost, shadow, and pinned-adapter data never bleed across
-tenants, and a request cannot reach a backend/adapter outside the configured
-fleet. GPU-level memory isolation between LoRA adapters is the serving engine's
-job (Tier-2), asserted there; this is the gateway's half of the contract."""
+tested adversarially'). Guarantees Photon actually enforces at its layer:
+per-tenant telemetry/cost/history queries are tenant-scoped and never return
+another tenant's rows; a request cannot reach a backend/adapter outside the
+configured fleet; and the shadow store persists NO tenant-identifying or prompt
+content (so it can't be an exfil surface). Note the shadow store is a global
+operator-only plane, not tenant-partitioned — its safety is 'stores nothing
+sensitive', not 'partitions per tenant'. GPU-level memory isolation between
+LoRA adapters is the serving engine's job (Tier-2), asserted there."""
 import httpx
 import respx
 
@@ -26,7 +29,10 @@ def test_cost_and_decisions_never_leak_across_tenants(client):
     b_decisions = client.get("/photon/v1/routing/decisions", params={"tenant": "tenant-B"}).json()
     assert b_costs["backends"] == []
     assert b_decisions["decisions"] == []
-    # A sees exactly A's own row, nothing more
+    # positive controls: A's own cost + decision ARE recorded (so the empty-B
+    # assertions can't pass vacuously from broken recording)
+    a_costs = client.get("/photon/v1/costs", params={"tenant": "tenant-A"}).json()
+    assert a_costs["backends"] and a_costs["backends"][0]["requests"] == 1
     a_decisions = client.get("/photon/v1/routing/decisions", params={"tenant": "tenant-A"}).json()
     assert len(a_decisions["decisions"]) == 1
 

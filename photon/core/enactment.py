@@ -56,8 +56,15 @@ class VLLMAdapterControl:
 class EnactmentReport(BaseModel):
     loaded: list[str] = Field(default_factory=list)
     unloaded: list[str] = Field(default_factory=list)
+    already_resident: list[str] = Field(default_factory=list)  # idempotent no-op
+    already_absent: list[str] = Field(default_factory=list)     # idempotent no-op
     skipped: list[str] = Field(default_factory=list)  # unmapped base or no path
     errors: list[str] = Field(default_factory=list)   # control call failed
+    warnings: list[str] = Field(default_factory=list)  # loud surface for skips
+
+    @property
+    def clean(self) -> bool:
+        return not self.errors and not self.skipped
 
 
 class FleetEnactor:
@@ -65,15 +72,35 @@ class FleetEnactor:
         # keyed by base-model identifier as used in FleetSpec.adapters[].base
         self._controls = controls
 
+    async def _served(self, control: VLLMAdapterControl, cache: dict) -> set[str]:
+        key = id(control)
+        if key not in cache:
+            try:
+                cache[key] = set(await control.list_served())
+            except Exception:  # noqa: BLE001 — a failed probe → assume nothing served
+                cache[key] = set()
+        return cache[key]
+
     async def enact(self, plan: PlacementPlan, spec: FleetSpec) -> EnactmentReport:
+        """Idempotent: diffs the plan against what each server ACTUALLY serves
+        (list_served), so re-enacting a stable plan is a no-op rather than a
+        stream of false 'already loaded' errors."""
         report = EnactmentReport()
         adapters = {a.name: a for a in spec.adapters}
+        served_cache: dict = {}
 
         for name in plan.resident_adapters:
             adapter = adapters[name]
             control = self._controls.get(adapter.base)
             if control is None or adapter.path is None:
                 report.skipped.append(name)
+                report.warnings.append(
+                    f"resident adapter {name!r}: "
+                    + ("no path" if control is not None else f"base {adapter.base!r} not served here")
+                )
+                continue
+            if name in await self._served(control, served_cache):
+                report.already_resident.append(name)
                 continue
             if await control.load(name, adapter.path):
                 report.loaded.append(name)
@@ -85,6 +112,10 @@ class FleetEnactor:
             control = self._controls.get(adapter.base)
             if control is None:
                 report.skipped.append(name)
+                report.warnings.append(f"paged adapter {name!r}: base {adapter.base!r} not served here")
+                continue
+            if name not in await self._served(control, served_cache):
+                report.already_absent.append(name)
                 continue
             if await control.unload(name):
                 report.unloaded.append(name)

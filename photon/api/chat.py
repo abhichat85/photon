@@ -59,6 +59,7 @@ async def chat_completions(request: Request):
 
     photon = parse_photon_block(payload)  # also strips `photon` from payload
 
+    decide_started = time.perf_counter()
     try:
         if getattr(state.router, "wants_features", False):
             from photon.core.features import extract_features
@@ -80,6 +81,9 @@ async def chat_completions(request: Request):
             )
     except UnknownModelError:
         raise HTTPException(status_code=404, detail=f"unknown model {requested_model!r}")
+    # in-process routing-decision cost — the honest source for the §9 <3ms
+    # selection-overhead DoD (benchmark.py reads this header, no black-box guess)
+    decide_ms = (time.perf_counter() - decide_started) * 1000
 
     backend = decision.backend
 
@@ -141,7 +145,11 @@ async def chat_completions(request: Request):
 
     return JSONResponse(
         response,
-        headers={"X-Photon-Request-Id": request_id, "X-Photon-Backend": backend.name},
+        headers={
+            "X-Photon-Request-Id": request_id,
+            "X-Photon-Backend": backend.name,
+            "X-Photon-Decision-Ms": f"{decide_ms:.4f}",
+        },
     )
 
 

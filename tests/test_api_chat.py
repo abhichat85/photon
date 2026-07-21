@@ -29,6 +29,8 @@ def test_auto_routes_to_default_backend(client):
     assert r.status_code == 200
     assert r.headers["X-Photon-Backend"] == "big"
     assert "X-Photon-Request-Id" in r.headers
+    # in-process decision cost surfaced for the §9 selection-overhead benchmark
+    assert float(r.headers["X-Photon-Decision-Ms"]) >= 0.0
     sent = json.loads(route.calls.last.request.content)
     assert sent["model"] == "qwen-72b"
 

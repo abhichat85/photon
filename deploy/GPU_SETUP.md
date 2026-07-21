@@ -42,9 +42,18 @@ Verify: `curl localhost:8000/v1/models` lists the base model.
 # clone + install (host or a second container)
 git clone https://github.com/abhichat85/photon && cd photon
 pip install -e .
-# point the fleet config's backend base_url at the vLLM server, then:
+# Edit config/fleet.example.yaml so a backend matches the model you started in
+# step 2. BOTH must line up:
+#   - base_url  → your vLLM server (e.g. http://localhost:8000/v1)
+#   - model     → the EXACT model id vLLM serves (Qwen/Qwen2.5-7B-Instruct)
+# then:
 PHOTON_CONFIG=config/fleet.example.yaml uvicorn photon.api.app:main_app --factory --port 8080
 ```
+
+> **The one enactment gotcha:** in step 4 the adapter's `base` MUST equal a
+> configured backend's `model` (or its `name`). If it doesn't, `enact` returns
+> **200 with `skipped: [...]`** — a silent no-op, not an error. Always check the
+> response says `loaded`, not `skipped`.
 
 Run the preflight (checks everything below is wired before you spend time):
 
@@ -57,13 +66,18 @@ python -m scripts.preflight --gateway http://localhost:8080 --vllm http://localh
 Train or download a LoRA for the base, put it on the box, then:
 
 ```bash
+# `base` here = the model id vLLM serves AND a backend's `model` in your config.
 curl -X POST 'http://localhost:8080/photon/v1/fleet?enact=true' -H 'Content-Type: application/json' -d '{
   "base_models": ["Qwen/Qwen2.5-7B-Instruct"],
   "adapters": [{"name": "legal-v3", "base": "Qwen/Qwen2.5-7B-Instruct",
                 "pinned": true, "path": "/adapters/legal-v3"}],
   "slot_capacity": 3
 }'
-# → {"plan": {...}, "enactment": {"loaded": ["legal-v3"], ...}}
+# EXPECT: {"plan": {...}, "enactment": {"loaded": ["legal-v3"], "warnings": []}}
+# If you see "skipped":["legal-v3"] with a warning about "base ... not served
+# here", your config's backend `model` doesn't match "Qwen/Qwen2.5-7B-Instruct"
+# — fix step 3 and retry. Re-running a completed enact is safe: it reports
+# already_resident, not a duplicate load.
 ```
 
 `curl localhost:8000/v1/models` now lists `legal-v3` — the adapter is live.

@@ -54,6 +54,10 @@ def _spec():
 
 @respx.mock
 async def test_enactor_loads_resident_unloads_paged():
+    # server currently serves the base + fin-v2 (which the plan pages out) but
+    # NOT legal-v3 (which the plan makes resident) → load legal-v3, unload fin-v2
+    respx.get("http://s.test/v1/models").mock(return_value=httpx.Response(
+        200, json={"data": [{"id": "qwen-1.5b"}, {"id": "fin-v2"}]}))
     respx.post("http://s.test/v1/load_lora_adapter").mock(
         return_value=httpx.Response(200, text="Success"))
     respx.post("http://s.test/v1/unload_lora_adapter").mock(
@@ -66,6 +70,23 @@ async def test_enactor_loads_resident_unloads_paged():
     assert report.loaded == ["legal-v3"]
     assert report.unloaded == ["fin-v2"]
     assert report.skipped == []
+    assert report.errors == []
+
+
+@respx.mock
+async def test_enactor_is_idempotent_on_a_stable_plan():
+    # server already in the target state: legal-v3 resident, fin-v2 absent →
+    # re-enacting must be a pure no-op, NOT a stream of false errors
+    respx.get("http://s.test/v1/models").mock(return_value=httpx.Response(
+        200, json={"data": [{"id": "qwen-1.5b"}, {"id": "legal-v3"}]}))
+    spec = _spec()
+    plan = FleetManager().plan(spec)
+    async with httpx.AsyncClient() as client:
+        enactor = FleetEnactor({"qwen-1.5b": VLLMAdapterControl("http://s.test/v1", client)})
+        report = await enactor.enact(plan, spec)
+    assert report.loaded == [] and report.unloaded == []
+    assert report.already_resident == ["legal-v3"]
+    assert report.already_absent == ["fin-v2"]
     assert report.errors == []
 
 
@@ -93,6 +114,10 @@ async def test_enactor_skips_unmapped_base_and_pathless_adapter():
 def test_apply_fleet_enact_flag(client):
     # API: enact=true returns an enactment report alongside the plan
     with respx.mock:
+        respx.get("http://big.test/v1/models").mock(
+            return_value=httpx.Response(200, json={"data": [{"id": "qwen-72b"}]}))
+        respx.get("http://small.test/v1/models").mock(
+            return_value=httpx.Response(200, json={"data": [{"id": "qwen-7b"}]}))
         respx.post("http://big.test/v1/load_lora_adapter").mock(
             return_value=httpx.Response(200, text="Success"))
         respx.post("http://small.test/v1/load_lora_adapter").mock(

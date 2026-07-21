@@ -21,44 +21,75 @@ import httpx
 
 from photon.core.benchmark import build_report
 
-_PAYLOAD = {"model": "photon-auto", "messages": [{"role": "user", "content": "Say hi in 5 words."}]}
-_BACKEND_PAYLOAD = {"messages": _PAYLOAD["messages"], "max_tokens": 16}
+# IMPORTANT: baseline and routed must generate the SAME token count, or routed
+# latency (which includes generation) is inflated vs baseline and the §9 tax
+# number is garbage. max_tokens is fixed on both.
+_MAX_TOKENS = 16
+_MESSAGES = [{"role": "user", "content": "Say hi in 5 words."}]
+_PAYLOAD = {"model": "photon-auto", "messages": _MESSAGES, "max_tokens": _MAX_TOKENS}
+_BACKEND_PAYLOAD = {"messages": _MESSAGES, "max_tokens": _MAX_TOKENS}
+
+# require this fraction of calls to succeed before we trust the numbers — a run
+# where the gateway is down must FAIL, never silently PASS on empty samples.
+_MIN_SUCCESS_FRACTION = 0.9
 
 
-async def _time_calls(client: httpx.AsyncClient, url: str, payload: dict, n: int) -> list[float]:
-    latencies = []
+async def _time_calls(client, url, payload, n, capture_header=None):
+    """Return (latencies_ms, header_values). A failed call is dropped from
+    latencies but counted as a failure via len()."""
+    latencies, headers = [], []
     for _ in range(n):
         started = time.perf_counter()
         try:
             resp = await client.post(url, json=payload, timeout=120.0)
             resp.raise_for_status()
-        except httpx.HTTPError as exc:  # a failed sample is not a latency sample
+        except httpx.HTTPError as exc:
             print(f"  request failed: {exc}", file=sys.stderr)
             continue
         latencies.append((time.perf_counter() - started) * 1000)
-    return latencies
+        if capture_header and capture_header in resp.headers:
+            headers.append(float(resp.headers[capture_header]))
+    return latencies, headers
 
 
 async def _run(args) -> int:
     async with httpx.AsyncClient() as client:
         print(f"warming up + timing {args.requests} baseline calls (direct backend)...")
-        baseline = await _time_calls(
-            client, f"{args.backend}/chat/completions", {**_BACKEND_PAYLOAD, "model": args.backend_model}, args.requests
+        baseline, _ = await _time_calls(
+            client, f"{args.backend}/chat/completions",
+            {**_BACKEND_PAYLOAD, "model": args.backend_model}, args.requests,
         )
         print(f"timing {args.requests} routed calls (through Photon)...")
-        routed = await _time_calls(client, f"{args.gateway}/v1/chat/completions", _PAYLOAD, args.requests)
+        routed, decision_ms = await _time_calls(
+            client, f"{args.gateway}/v1/chat/completions", _PAYLOAD, args.requests,
+            capture_header="X-Photon-Decision-Ms",
+        )
 
-    # selection overhead = the gateway's own decision cost, approximated as the
-    # per-request delta of routed vs baseline (both hit the same backend). A
-    # true in-process measurement is available once the router exposes timing;
-    # this end-to-end delta is the honest black-box proxy.
-    n = min(len(baseline), len(routed))
-    overhead = [max(0.0, routed[i] - baseline[i]) for i in range(n)]
+    # GUARD: refuse to score (and refuse to PASS) if too many calls failed. An
+    # empty/thin sample set otherwise yields a false PASS — the opposite of a gate.
+    need = int(_MIN_SUCCESS_FRACTION * args.requests)
+    if len(baseline) < need or len(routed) < need:
+        print(
+            f"\nFAIL: too few successful calls "
+            f"(baseline {len(baseline)}/{args.requests}, routed {len(routed)}/{args.requests}; "
+            f"need >= {need}). Not scoring — fix the gateway/backend first.",
+            file=sys.stderr,
+        )
+        return 1
+    if not decision_ms:
+        print(
+            "\nFAIL: gateway returned no X-Photon-Decision-Ms headers — cannot "
+            "measure selection overhead. Is this a current Photon build?",
+            file=sys.stderr,
+        )
+        return 1
 
+    # selection overhead is now the gateway's OWN reported decision time (real,
+    # in-process) — not a black-box per-index delta.
     report = build_report(
         baseline_latencies_ms=baseline,
         routed_latencies_ms=routed,
-        selection_overhead_ms=overhead,
+        selection_overhead_ms=decision_ms,
         baseline_cost_usd=args.baseline_cost_usd,
         measured_cost_usd=args.measured_cost_usd,
     )
