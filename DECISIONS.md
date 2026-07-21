@@ -166,22 +166,59 @@ substance.
 **Change trigger:** the Tier-2 dense engine lands behind ServingBackend; the
 orchestrator then gains what only real GPU residency makes meaningful.
 
+## D13 — Solo mode: vLLM-native LoRA, fork only on a measured number
+
+**Context change:** there is no founding inference engineer. It is one operator.
+This retires the earlier lean (D-F1 in spec 04: "patched vLLM fork → S-LoRA").
+**Decision:** the Fabric substrate is vLLM's **native runtime LoRA management**
+(`load_lora_adapter`/`unload_lora_adapter`, enabled by
+`VLLM_ALLOW_RUNTIME_LORA_UPDATING`). `FleetEnactor` drives it; a plan is now
+*enacted*, not merely advisory. A patched fork or custom Triton kernels are
+taken up ONLY if `scripts/benchmark.py` shows native LoRA missing the §9
+targets at the target adapter density — i.e. gated on a measurement, never on
+ambition. A solo operator cannot maintain a fork on speculation; they can read
+a benchmark and decide.
+**Change trigger:** `benchmark.py` reports routing-tax or density shortfall at
+the density we actually need. Not before.
+
+## D14 — The §9 numbers are code, not prose
+
+**Decision:** the spec's DoD numbers (≤15% routing tax, <3ms selection overhead,
+≥3× cost reduction) live in `photon/core/benchmark.py` as scored functions with
+the targets baked in, driven by `scripts/benchmark.py` against a live gateway
+(exit 1 on any miss). "Benchmark precedes the number" is executable.
+**Why:** solo, the discipline that stops wishful claims has to be automated —
+you can't peer-review yourself. The gate does it.
+**Change trigger:** none — this is the intended steady state.
+
+## D15 — Two things stay physical; everything around them is one command
+
+**Decision:** exactly two steps require the operator's money/judgment and cannot
+be pre-executed: (1) renting a GPU (`deploy/GPU_SETUP.md`, ~$1–2/hr) and (2)
+cutting live Praxiom traffic over (`deploy/PRAXIOM_CUTOVER.md`, staged +
+reversible). Everything bracketing them — enactment, preflight
+(`scripts/preflight.py`), benchmarking, shadow enable (`scripts/enable_shadow.py`),
+the go/no-go analysis — is built, tested, and single-command.
+**Why:** minimize the surface where a solo operator can fumble a high-stakes,
+money- or production-touching action. The code does everything that isn't
+irreducibly yours.
+**Change trigger:** none.
+
 ---
 
-## The Ops / Core line (what is deliberately NOT here)
+## Tier boundary — solo-mode restatement (what is genuinely NOT here)
 
-Photon Ops v1 is the serving + deployment + quality substrate. The **moat** —
-Photon Core — is deliberately deferred, gated on the Phase 0 shadow study and a
-founding inference-engineer hire:
+Everything CPU-buildable against spec 03/04 is built and tested. What remains is
+not deferred-for-a-hire; it is deferred-for-hardware-and-traffic, and the code
+is shaped so each slots in with no rework:
 
-- **Fabric** — many-adapter serving at density (S-LoRA-class unified paging,
-  Triton kernels, the fleet manager's dynamic residency). Ops covers single/
-  few-adapter serving via vLLM `--enable-lora`; Fabric is hundreds at near-zero
-  swap latency.
-- **Learned Router** — feature extraction + policy model + cascade controller +
-  regret loop. Ops ships the *seam* (static router behind `resolve()`, the
-  `photon` block recorded, the shadow study collecting data); Core replaces the
-  static table without an API change.
+- **Tier 2 (needs a GPU box):** the *measured* Fabric numbers and, only if the
+  benchmark demands it, fork/kernel work. The enactment path, benchmark harness,
+  and isolation checks are all built and unit-tested; they light up the hour a
+  GPU exists (`deploy/GPU_SETUP.md`).
+- **Tier 3 (needs the Praxiom cutover):** the ≥40%-savings validation and going
+  the learned router live. Every instrument — shadow store, history feature,
+  replay harness, promotion gate, `enable_shadow.py` — is built and waiting; the
+  cutover runbook drives it (`deploy/PRAXIOM_CUTOVER.md`).
 
-These are not gaps in Ops — they are the next phase, and the whole point of
-finishing Ops to 100% first.
+No hire is on the critical path. Money (a GPU) and a decision (the cutover) are.

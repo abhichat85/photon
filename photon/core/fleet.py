@@ -12,6 +12,10 @@ class AdapterSpec(BaseModel):
     name: str
     base: str
     pinned: bool = False
+    # filesystem path of the LoRA adapter as seen by the vLLM server — required
+    # to ENACT a placement (vLLM's load_lora_adapter needs it); optional while
+    # a plan is advisory-only.
+    path: str | None = None
 
 
 class FleetSpec(BaseModel):
