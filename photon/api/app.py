@@ -14,6 +14,7 @@ from photon.api.pipelines import pipelines_router
 from photon.core.fleet import FleetManager
 from photon.core.serving import VLLMServingBackend
 from photon.core.shadow_store import ShadowDecisionStore
+from photon.india.token_economics import TokenEfficiencyStore
 from photon.observability import (
     RequestLogMiddleware,
     init_sentry,
@@ -31,11 +32,13 @@ def create_app(
     db_path: str | None = None,
     registry_db: str | None = None,
     shadow_db: str | None = None,
+    tokeff_db: str | None = None,
 ) -> FastAPI:
     config = config or PhotonConfig.from_yaml(os.environ["PHOTON_CONFIG"])
     db_path = db_path or os.environ.get("PHOTON_DB", "photon.db")
     registry_db = registry_db or os.environ.get("PHOTON_REGISTRY_DB", "registry.db")
     shadow_db = shadow_db or os.environ.get("PHOTON_SHADOW_DB", "shadow.db")
+    tokeff_db = tokeff_db or os.environ.get("PHOTON_TOKEFF_DB", "token_efficiency.db")
 
     setup_logging()
     init_sentry()  # no-op unless SENTRY_DSN is set
@@ -66,6 +69,9 @@ def create_app(
     # router itself stays opt-in. Enable with:
     #   app.state.shadow_router = ShadowRouter(learned, sink=app.state.shadow_store.insert)
     app.state.shadow_store = ShadowDecisionStore(shadow_db)
+    # language-fair cost accounting: tokenizer efficiency per (backend, script),
+    # measured from live traffic (photon/india/token_economics.py)
+    app.state.token_efficiency = TokenEfficiencyStore(tokeff_db)
     app.state.shadow_router = None  # set to a ShadowRouter to enable shadow logging
     app.state.pipelines = {}  # id -> PipelineSpec; per-process, config-like
     app.include_router(chat_router)

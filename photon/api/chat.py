@@ -22,6 +22,22 @@ async def list_models(request: Request):
     return {"object": "list", "data": [{"id": i, "object": "model"} for i in ids]}
 
 
+def _record_token_efficiency(state, backend_name: str, messages: list, prompt_tokens) -> None:
+    """Fold this request into the (backend, script) tokenizer-efficiency ledger.
+    This is what makes language-fair cost accounting possible for Indic traffic —
+    the ratios are measured from real usage, never assumed. No-op if the store
+    isn't configured or the request had no usable prompt/token counts."""
+    store = getattr(state, "token_efficiency", None)
+    if store is None or not prompt_tokens:
+        return
+    from photon.india.script import messages_script
+
+    chars = sum(m.get("content", "") and len(m["content"]) or 0
+                for m in messages if isinstance(m.get("content"), str))
+    if chars:
+        store.record(backend_name, messages_script(messages), chars, prompt_tokens)
+
+
 def parse_photon_block(payload: dict) -> dict:
     """Pop and validate the optional `photon` request-extension block (spec §6),
     mutating `payload` so it never reaches the upstream vLLM (which rejects
@@ -140,6 +156,7 @@ async def chat_completions(request: Request):
             record.shadow_est_cost_usd = compute_cost_usd(
                 shadow_backend.pricing, record.prompt_tokens, record.completion_tokens
             )
+    _record_token_efficiency(state, backend.name, payload.get("messages", []), record.prompt_tokens)
     state.store.insert(record)
     metrics.observe(record)
 
