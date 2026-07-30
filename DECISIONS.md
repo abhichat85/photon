@@ -204,6 +204,46 @@ money- or production-touching action. The code does everything that isn't
 irreducibly yours.
 **Change trigger:** none.
 
+## D16 — Cost is denominated per CHARACTER for Indic traffic, not per token
+
+**Decision:** Photon measures chars-per-token per (backend, script) from live
+traffic and routes Indic requests on cost-per-1,000-characters, not $/token.
+**Why:** a token is not a constant amount of meaning. Latin-optimised BPEs
+fragment Indic scripts, so per-token pricing over-charges Hindi/Tamil/etc for
+identical semantic content — and per-token *routing* therefore picks the wrong
+model on exactly the traffic an Indian product serves most. Under the
+per-character unit, a model that is dearer per token can be genuinely cheaper
+for Hindi; that inversion is the arbitrage `IndicAwareRouter` takes.
+**Discipline:** an unmeasured (backend, script) pair is ineligible — no assumed
+ratios, including vendor Indic-efficiency claims.
+**Change trigger:** none — this is the correct unit. If tokenizers converge on
+Indic parity the penalty simply measures as ~1.0 and routing stops inverting.
+
+## D17 — Rupee-native, with derived (not quoted) GPU economics
+
+**Decision:** ₹ with GST split is a first-class output; FX rates require
+provenance; ₹/1M tokens is derived from ₹/hour ÷ *measured* tokens/second.
+**Why:** an Indian buyer cannot act on a USD number, and a cost model built on
+vendor throughput claims isn't a cost model. The shipped provider book is
+placeholders only, enforced by a test — the India margin story has to be
+computed from your quotes and your benchmark, or it isn't real.
+**Change trigger:** none.
+
+## D18 — Residency is an enforced control; country is declared, not inferred
+
+**Decision:** residency-restricted tenants are blocked before dispatch (451,
+zero upstream calls) with a generated attestation endpoint. Backend `country` is
+explicit config, and `operator_jurisdiction` is a separate field.
+**Why:** "our data stays in India" is the most common Indian enterprise blocker
+and is usually answered with a PDF; an enforced control plus an audit artifact
+is a different conversation. Country cannot be inferred from region names (AWS
+Mumbai = `ap-south-1`, Azure = `centralindia`, GCP = `asia-south1`) — I wrote
+that prefix heuristic first and a test caught it mis-classifying real
+deployments. Region and operator jurisdiction are separate questions:
+in-country compute run by a foreign entity satisfies localisation but not
+sovereignty, and buyers ask about both.
+**Change trigger:** none. Note this is engineering, not legal advice.
+
 ---
 
 ## Tier boundary — solo-mode restatement (what is genuinely NOT here)
