@@ -46,7 +46,9 @@ class LearnedRoutingAdapter:
         self._static = static
         self._config = config
 
-    def resolve(self, requested_model: str, allow_canary: bool = True, features=None):
+    def resolve(self, requested_model: str, allow_canary: bool = True, features=None, messages=None):
+        # `messages` is accepted for signature-uniformity with other
+        # feature-wanting routers (e.g. IndicAwareRouter); unused here.
         from photon.router.static import AUTO_MODEL, RouteDecision
 
         if requested_model != AUTO_MODEL or not allow_canary or features is None:

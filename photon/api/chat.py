@@ -22,6 +22,22 @@ async def list_models(request: Request):
     return {"object": "list", "data": [{"id": i, "object": "model"} for i in ids]}
 
 
+def _enforce_residency(state, tenant: str, backend_name: str) -> None:
+    """Block dispatch when a tenant's data-residency policy forbids this
+    backend (photon/india/residency.py). Fails CLOSED before any bytes leave
+    the gateway — the control that makes 'data stays in India' checkable rather
+    than merely asserted. No enforcer configured → no-op."""
+    enforcer = getattr(state, "residency", None)
+    if enforcer is None:
+        return
+    from photon.india.residency import ResidencyViolation
+
+    try:
+        enforcer.check(tenant, backend_name)
+    except ResidencyViolation as exc:
+        raise HTTPException(status_code=451, detail=str(exc))
+
+
 def _record_token_efficiency(state, backend_name: str, messages: list, prompt_tokens) -> None:
     """Fold this request into the (backend, script) tokenizer-efficiency ledger.
     This is what makes language-fair cost accounting possible for Indic traffic —
@@ -90,6 +106,7 @@ async def chat_completions(request: Request):
                 requested_model,
                 allow_canary=(photon["route"] != "pin"),
                 features=route_feats,
+                messages=payload.get("messages", []),
             )
         else:
             decision = state.router.resolve(
@@ -102,6 +119,7 @@ async def chat_completions(request: Request):
     decide_ms = (time.perf_counter() - decide_started) * 1000
 
     backend = decision.backend
+    _enforce_residency(state, tenant, backend.name)
 
     shadow = getattr(state, "shadow_router", None)
     if shadow is not None:

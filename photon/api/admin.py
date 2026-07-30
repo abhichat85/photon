@@ -90,6 +90,18 @@ async def register_adapter(request: Request, body: AdapterRegistration):
     return mv.model_dump()
 
 
+@admin_router.get("/india/residency")
+async def residency_attestation(request: Request, tenant: str = "default"):
+    """Machine-readable attestation of what residency is ENFORCED for a tenant —
+    the artifact for an auditor or a security questionnaire, generated from the
+    live config rather than written by hand."""
+    enforcer = request.app.state.residency
+    if enforcer is None:
+        return {"tenant": tenant, "restricted": False,
+                "note": "no residency enforcement configured on this deployment"}
+    return enforcer.attestation(tenant)
+
+
 @admin_router.get("/india/token-efficiency")
 async def token_efficiency(request: Request, backend: str | None = None):
     """Measured tokenizer efficiency per (backend, script), with the Indic

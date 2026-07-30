@@ -72,6 +72,10 @@ def create_app(
     # language-fair cost accounting: tokenizer efficiency per (backend, script),
     # measured from live traffic (photon/india/token_economics.py)
     app.state.token_efficiency = TokenEfficiencyStore(tokeff_db)
+    # data-residency enforcement (DPDP/RBI-relevant). None = unrestricted;
+    # install a ResidencyEnforcer to make 'data stays in India' an enforced
+    # control rather than a policy claim (photon/india/residency.py).
+    app.state.residency = None
     app.state.shadow_router = None  # set to a ShadowRouter to enable shadow logging
     app.state.pipelines = {}  # id -> PipelineSpec; per-process, config-like
     app.include_router(chat_router)
