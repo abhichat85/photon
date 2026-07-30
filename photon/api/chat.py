@@ -22,6 +22,38 @@ async def list_models(request: Request):
     return {"object": "list", "data": [{"id": i, "object": "model"} for i in ids]}
 
 
+def _enforce_residency(state, tenant: str, backend_name: str) -> None:
+    """Block dispatch when a tenant's data-residency policy forbids this
+    backend (photon/india/residency.py). Fails CLOSED before any bytes leave
+    the gateway — the control that makes 'data stays in India' checkable rather
+    than merely asserted. No enforcer configured → no-op."""
+    enforcer = getattr(state, "residency", None)
+    if enforcer is None:
+        return
+    from photon.india.residency import ResidencyViolation
+
+    try:
+        enforcer.check(tenant, backend_name)
+    except ResidencyViolation as exc:
+        raise HTTPException(status_code=451, detail=str(exc))
+
+
+def _record_token_efficiency(state, backend_name: str, messages: list, prompt_tokens) -> None:
+    """Fold this request into the (backend, script) tokenizer-efficiency ledger.
+    This is what makes language-fair cost accounting possible for Indic traffic —
+    the ratios are measured from real usage, never assumed. No-op if the store
+    isn't configured or the request had no usable prompt/token counts."""
+    store = getattr(state, "token_efficiency", None)
+    if store is None or not prompt_tokens:
+        return
+    from photon.india.script import messages_script
+
+    chars = sum(m.get("content", "") and len(m["content"]) or 0
+                for m in messages if isinstance(m.get("content"), str))
+    if chars:
+        store.record(backend_name, messages_script(messages), chars, prompt_tokens)
+
+
 def parse_photon_block(payload: dict) -> dict:
     """Pop and validate the optional `photon` request-extension block (spec §6),
     mutating `payload` so it never reaches the upstream vLLM (which rejects
@@ -74,6 +106,7 @@ async def chat_completions(request: Request):
                 requested_model,
                 allow_canary=(photon["route"] != "pin"),
                 features=route_feats,
+                messages=payload.get("messages", []),
             )
         else:
             decision = state.router.resolve(
@@ -86,6 +119,7 @@ async def chat_completions(request: Request):
     decide_ms = (time.perf_counter() - decide_started) * 1000
 
     backend = decision.backend
+    _enforce_residency(state, tenant, backend.name)
 
     shadow = getattr(state, "shadow_router", None)
     if shadow is not None:
@@ -140,6 +174,7 @@ async def chat_completions(request: Request):
             record.shadow_est_cost_usd = compute_cost_usd(
                 shadow_backend.pricing, record.prompt_tokens, record.completion_tokens
             )
+    _record_token_efficiency(state, backend.name, payload.get("messages", []), record.prompt_tokens)
     state.store.insert(record)
     metrics.observe(record)
 

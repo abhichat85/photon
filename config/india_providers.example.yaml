@@ -1,0 +1,82 @@
+# Indian GPU capacity — cost basis for rupee-native unit economics.
+#
+# ⚠️  EVERY PRICE AND THROUGHPUT BELOW IS A PLACEHOLDER. Do not quote a customer
+# from this file. GPU pricing in India moves fast, varies by commitment term and
+# region, and is frequently negotiated — so the only trustworthy number is the
+# one on YOUR quote. Likewise `measured_tokens_per_second` must come from YOUR
+# benchmark run (scripts/benchmark.py) on YOUR model, not from a vendor claim.
+#
+# Fill in real values, then derive ₹/1M tokens:
+#     python -m scripts.india_costing config/india_providers.yaml
+#
+# Why this file exists: Indian GPU capacity is materially cheaper than
+# us-east-1, and that cost advantage is the whole margin story for an
+# India-priced AI product. But it only becomes a quotable price after you
+# divide a real ₹/hour by a real measured throughput.
+
+fx:
+  usd_to_inr: 0.0            # PLACEHOLDER — set from RBI reference / your invoice
+  source: "SET ME — e.g. 'RBI reference rate YYYY-MM-DD'"
+
+gst_rate: 0.18               # services; verify your classification
+
+providers:
+  # --- Indian providers: the reason this file exists ---
+  - name: e2e-networks
+    region: in-north-1
+    data_residency: india     # DPDP-relevant: data stays in India
+    gpu: "PLACEHOLDER (e.g. A100-80GB / H100)"
+    inr_per_hour: 0.0         # PLACEHOLDER — from your quote
+    measured_tokens_per_second: 0.0   # PLACEHOLDER — from scripts/benchmark.py
+    notes: "Indian provider, INR billing, Indian data centres."
+
+  - name: jarvislabs
+    region: india
+    data_residency: india
+    gpu: "PLACEHOLDER"
+    inr_per_hour: 0.0
+    measured_tokens_per_second: 0.0
+    notes: "Per-minute billing suits burst/dev workloads."
+
+  - name: yotta-shakti
+    region: in-west-1
+    data_residency: india
+    gpu: "PLACEHOLDER"
+    inr_per_hour: 0.0
+    measured_tokens_per_second: 0.0
+    notes: >-
+      Large Indian GPU estate. Check IndiaAI Mission subsidised-compute
+      eligibility — empanelled providers offer discounted rates to qualifying
+      Indian entities, which can change unit economics substantially.
+
+  - name: neysa
+    region: india
+    data_residency: india
+    gpu: "PLACEHOLDER"
+    inr_per_hour: 0.0
+    measured_tokens_per_second: 0.0
+    notes: "Indian AI-cloud provider."
+
+  # --- Hyperscaler comparison: is the India discount real for YOUR workload? ---
+  - name: aws-ap-south-1
+    region: ap-south-1
+    data_residency: india     # Mumbai region — in-country, but a US-owned entity
+    gpu: "PLACEHOLDER (e.g. g6e.xlarge / p4d)"
+    inr_per_hour: 0.0
+    measured_tokens_per_second: 0.0
+    notes: >-
+      In-India region satisfies data-localisation on paper. Note the distinction
+      that matters for sovereignty-sensitive buyers (see deploy/DPDP.md): the
+      data sits in India, the operator is a foreign entity.
+
+  # --- Owned hardware: the end state for a steady base load ---
+  - name: colo-owned
+    region: "your DC"
+    data_residency: india
+    gpu: "PLACEHOLDER"
+    inr_per_hour: 0.0         # amortised capex + power + colo per GPU-hour
+    measured_tokens_per_second: 0.0
+    notes: >-
+      Below a certain steady utilisation, renting wins; above it, owning does.
+      scripts/india_costing.py prints the break-even so the decision is a
+      number, not a vibe.
